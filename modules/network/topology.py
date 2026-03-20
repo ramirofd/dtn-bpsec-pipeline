@@ -122,6 +122,9 @@ class Topology(Mapping[int, int]):
     def network_exists(self, network_id: int) -> bool:
         return network_id in self.network_to_nodes
 
+    def are_in_same_network(self, node_a: int, node_b: int) -> bool:
+        return self[node_a] == self[node_b]
+
     def __getitem__(self, node_id: int) -> int:
         network_id = self.node_to_network.get(node_id)
         if network_id is None:

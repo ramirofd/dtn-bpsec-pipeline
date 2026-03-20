@@ -14,7 +14,6 @@ from modules.network.cgr.exceptions import (
 from modules.network.cgr.forwarding import fwd_candidate
 from modules.network.cgr.loader import ContactPlanDocument, ContactPlanEntry, cp_load, cp_random
 from modules.network.cgr.models import Bundle, Contact, Route
-from modules.network.cgr.plotting import plot_contact_graph, plot_routes
 
 __all__ = [
     "CGRError",
@@ -34,7 +33,5 @@ __all__ = [
     "cgr_anchor",
     "cgr_ended",
     "cgr_depleted",
-    "plot_routes",
-    "plot_contact_graph",
     "fwd_candidate",
 ]
