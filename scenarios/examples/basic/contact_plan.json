@@ -1,0 +1,26 @@
+[
+  {
+    "start": 0,
+    "end": 30,
+    "from": 1,
+    "to": 2,
+    "rate": 1000,
+    "owlt": 1
+  },
+  {
+    "start": 35,
+    "end": 70,
+    "from": 2,
+    "to": 3,
+    "rate": 1000,
+    "owlt": 2
+  },
+  {
+    "start": 75,
+    "end": 120,
+    "from": 1,
+    "to": 3,
+    "rate": 500,
+    "owlt": 3
+  }
+]
