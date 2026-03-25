@@ -32,5 +32,30 @@ class SecurityRole(Enum):
     SEC_VERIFIER = auto()
 
 
+class SecurityModelType(Enum):
+    HOP_BY_HOP = auto()
+    END_TO_END = auto()
+    EDGE_BY_EDGE = auto()
+    EDGE_TO_EDGE = auto()
+
+
+class SecurityService(Enum):
+    BCB = auto()
+    BIB = auto()
+
+
+class KeyType(Enum):
+    NODE_TO_NODE = auto()
+    NODE_TO_NETWORK = auto()
+    NETWORK_TO_NETWORK = auto()
+
+
+class NodeAction(Enum):
+    SOURCE = auto()
+    ACCEPT = auto()
+    VERIFY = auto()
+    USE = auto()
+
+
 class SecurityModel(ABC):
     pass

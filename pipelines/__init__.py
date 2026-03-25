@@ -9,6 +9,11 @@ from pipelines.routing import (
     RoutingRequest,
     ensure_routing_algorithm,
 )
+from pipelines.security import (
+    SecurityPipelineResult,
+    build_security_artifacts,
+    build_security_plan_for_route,
+)
 from pipelines.simulation import SimulationResult, run_simulation
 
 __all__ = [
@@ -19,6 +24,9 @@ __all__ = [
     "CGREndedRouting",
     "CGRDepletedRouting",
     "ensure_routing_algorithm",
+    "SecurityPipelineResult",
+    "build_security_artifacts",
+    "build_security_plan_for_route",
     "SimulationResult",
     "run_simulation",
 ]

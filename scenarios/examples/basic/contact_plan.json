@@ -17,10 +17,18 @@
   },
   {
     "start": 75,
-    "end": 120,
-    "from": 1,
-    "to": 3,
-    "rate": 500,
-    "owlt": 3
+    "end": 110,
+    "from": 3,
+    "to": 4,
+    "rate": 1000,
+    "owlt": 1
+  },
+  {
+    "start": 115,
+    "end": 160,
+    "from": 4,
+    "to": 5,
+    "rate": 1000,
+    "owlt": 2
   }
 ]

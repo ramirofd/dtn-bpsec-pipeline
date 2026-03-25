@@ -4,6 +4,8 @@ from pathlib import Path
 import typer
 
 from modules.network.topology import NodeNotFoundError, Topology, topology_load
+from modules.security.models import SecurityModelType
+from pipelines.security import build_security_artifacts
 from pipelines.simulation import run_simulation
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,15 @@ def _load_topology(topology_path: Path) -> Topology:
 def _validate_node_exists(topology: Topology, node_id: int, label: str) -> None:
     if not topology.node_exists(node_id):
         raise typer.BadParameter(f"{label} node {node_id} no existe en la topologia")
+
+
+def _parse_security_model(raw: str) -> SecurityModelType:
+    normalized = raw.strip().replace("-", "_").upper()
+    try:
+        return SecurityModelType[normalized]
+    except KeyError as exc:
+        valid = ", ".join(model.name.lower() for model in SecurityModelType)
+        raise typer.BadParameter(f"security model invalido: {raw}. validos: {valid}") from exc
 
 
 @app.command()
@@ -130,6 +141,75 @@ def routes(
             route.best_delivery_time,
             route.volume,
         )
+
+
+@app.command("security-plan")
+def security_plan(
+    source: int = typer.Option(..., min=1, help="Nodo origen."),
+    destination: int = typer.Option(..., min=1, help="Nodo destino."),
+    model: str = typer.Option(..., help="Modelo: hop_by_hop, end_to_end, edge_by_edge o edge_to_edge."),
+    cp_path: Path = typer.Option(
+        DEFAULT_CP_PATH,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Path al contact plan JSON.",
+    ),
+    topology_path: Path = typer.Option(
+        DEFAULT_TOPOLOGY_PATH,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Path a la topologia JSON.",
+    ),
+    curr_time: int = typer.Option(0, min=0, help="Tiempo actual para el calculo de rutas."),
+    num_routes: int = typer.Option(1, min=1, help="Cantidad maxima de rutas a calcular."),
+) -> None:
+    security_model = _parse_security_model(model)
+    result = run_simulation(
+        cp_path=str(cp_path),
+        topology_path=str(topology_path),
+        source=source,
+        destination=destination,
+        curr_time=curr_time,
+        num_routes=num_routes,
+    )
+    security = build_security_artifacts(
+        result.routes,
+        result.topology,
+        source_node=source,
+        destination_node=destination,
+        model=security_model,
+    )
+
+    logger.info(
+        "cli.security.summary | model=%s routes=%d",
+        security_model.name.lower(),
+        len(security.annotated_routes),
+    )
+    for annotated, plan in zip(security.annotated_routes, security.protection_plans, strict=True):
+        logger.info(
+            "cli.security.route | route_id=%s node_path=%s network_path=%s crossings=%d gateways=%s",
+            annotated.route_id,
+            list(annotated.node_path),
+            list(annotated.network_path),
+            len(annotated.boundary_crossings),
+            sorted(annotated.gateway_nodes),
+        )
+        for operation in plan.operations:
+            logger.info(
+                "cli.security.operation | operation=%s service=%s source=%d acceptor=%d key_type=%s scope=%s->%s hops=%s",
+                operation.operation_id,
+                operation.service.name,
+                operation.source_node,
+                operation.acceptor_node,
+                operation.required_key_type.name,
+                operation.key_source_id,
+                operation.key_target_id,
+                list(operation.target_hop_indexes),
+            )
+        for note in plan.notes:
+            logger.info("cli.security.note | route_id=%s note=%s", annotated.route_id, note)
 
 
 @app.command("topology-info")
