@@ -4,8 +4,9 @@ from pathlib import Path
 import typer
 
 from modules.network.topology import NodeNotFoundError, Topology, topology_load
+from modules.security.annotated_routes import annotate_routes
 from modules.security.models import SecurityModelType
-from pipelines.security import build_security_artifacts
+from pipelines.security import build_protection_plans
 from pipelines.simulation import run_simulation
 
 logger = logging.getLogger(__name__)
@@ -174,20 +175,23 @@ def security_plan(
         curr_time=curr_time,
         num_routes=num_routes,
     )
-    security = build_security_artifacts(
+    annotated_routes = annotate_routes(
         result.routes,
         result.topology,
         source_node=source,
         destination_node=destination,
+    )
+    protection_plans = build_protection_plans(
+        annotated_routes,
         model=security_model,
     )
 
     logger.info(
         "cli.security.summary | model=%s routes=%d",
         security_model.name.lower(),
-        len(security.annotated_routes),
+        len(annotated_routes),
     )
-    for annotated, plan in zip(security.annotated_routes, security.protection_plans, strict=True):
+    for annotated, plan in zip(annotated_routes, protection_plans, strict=True):
         logger.info(
             "cli.security.route | route_id=%s node_path=%s network_path=%s crossings=%d gateways=%s",
             annotated.route_id,

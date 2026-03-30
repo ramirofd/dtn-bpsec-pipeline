@@ -5,9 +5,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from modules.security.annotated_routes import annotate_routes
 from modules.security.models import SecurityModelType
 from pipelines.routing import CGRYenRouting
-from pipelines.security import build_security_artifacts
+from pipelines.security import build_protection_plans
 from pipelines.simulation import run_simulation
 
 
@@ -18,7 +19,7 @@ def main() -> None:
         cp_path=str(example_dir / "contact_plan.json"),
         topology_path=str(example_dir / "topology.json"),
         source=1,
-        destination=5,
+        destination=12,
         curr_time=0,
         routing_algorithm=CGRYenRouting(max_routes=2),
     )
@@ -51,15 +52,26 @@ def main() -> None:
 
     print("\nsecurity pipeline")
     for model in SecurityModelType:
-        security = build_security_artifacts(
+        annotated_routes = annotate_routes(
             result.routes,
             result.topology,
             source_node=1,
-            destination_node=5,
+            destination_node=12,
+        )
+        protection_plans = build_protection_plans(
+            annotated_routes,
             model=model,
         )
         print(f"model | {model.name.lower()}")
-        for annotated, plan in zip(security.annotated_routes, security.protection_plans, strict=True):
+        for annotated, plan in zip(annotated_routes, protection_plans, strict=True):
+            print(
+                "plan_summary | operations=%d node_requirements=%d key_requirements=%d"
+                % (
+                    len(plan.operations),
+                    len(plan.node_requirements),
+                    len(plan.key_requirements),
+                )
+            )
             print(
                 "annotated_route | id=%s node_path=%s network_path=%s crossings=%s gateways=%s"
                 % (

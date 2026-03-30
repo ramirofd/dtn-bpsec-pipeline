@@ -46,8 +46,8 @@ class SecurityService(Enum):
 
 class KeyType(Enum):
     NODE_TO_NODE = auto()
-    NODE_TO_NETWORK = auto()
-    NETWORK_TO_NETWORK = auto()
+    NODE_TO_GROUP = auto()
+    GROUP_TO_GROUP = auto()
 
 
 class NodeAction(Enum):

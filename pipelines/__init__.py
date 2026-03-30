@@ -11,6 +11,8 @@ from pipelines.routing import (
 )
 from pipelines.security import (
     SecurityPipelineResult,
+    build_protection_plan_for_annotated_route,
+    build_protection_plans,
     build_security_artifacts,
     build_security_plan_for_route,
 )
@@ -25,6 +27,8 @@ __all__ = [
     "CGRDepletedRouting",
     "ensure_routing_algorithm",
     "SecurityPipelineResult",
+    "build_protection_plans",
+    "build_protection_plan_for_annotated_route",
     "build_security_artifacts",
     "build_security_plan_for_route",
     "SimulationResult",
