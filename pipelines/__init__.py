@@ -16,7 +16,20 @@ from pipelines.security import (
     build_security_artifacts,
     build_security_plan_for_route,
 )
-from pipelines.simulation import SimulationResult, run_simulation
+from pipelines.simulation import (
+    AnnotatedNodePairResult,
+    AnnotationBatchResult,
+    NodePairRoutesResult,
+    RoutingBatchResult,
+    SecurityBatchResult,
+    SecurityModelResult,
+    SecurityNodePairResult,
+    SimulationResult,
+    annotate_routing_batch,
+    build_security_batch,
+    compute_routes_for_pairs,
+    run_simulation,
+)
 
 __all__ = [
     "RoutingAlgorithm",
@@ -31,6 +44,16 @@ __all__ = [
     "build_protection_plan_for_annotated_route",
     "build_security_artifacts",
     "build_security_plan_for_route",
+    "NodePairRoutesResult",
+    "RoutingBatchResult",
+    "AnnotatedNodePairResult",
+    "AnnotationBatchResult",
+    "SecurityModelResult",
+    "SecurityNodePairResult",
+    "SecurityBatchResult",
+    "compute_routes_for_pairs",
+    "annotate_routing_batch",
+    "build_security_batch",
     "SimulationResult",
     "run_simulation",
 ]

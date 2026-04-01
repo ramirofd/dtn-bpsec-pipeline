@@ -4,9 +4,7 @@ from pathlib import Path
 import typer
 
 from modules.network.topology import NodeNotFoundError, Topology, topology_load
-from modules.security.annotated_routes import annotate_routes
 from modules.security.models import SecurityModelType
-from pipelines.security import build_protection_plans
 from pipelines.simulation import run_simulation
 
 logger = logging.getLogger(__name__)
@@ -64,6 +62,8 @@ def load(
     result = run_simulation(
         cp_path=str(cp_path),
         topology_path=str(topology_path),
+        node_pairs=(),
+        security_models=(),
     )
 
     logger.info(
@@ -115,14 +115,15 @@ def routes(
         result = run_simulation(
             cp_path=str(cp_path),
             topology_path=str(topology_path),
-            source=source,
-            destination=destination,
+            node_pairs=((source, destination),),
+            security_models=(),
             curr_time=curr_time,
             num_routes=num_routes,
         )
     except NodeNotFoundError as exc:
         raise typer.BadParameter(str(exc)) from exc
     topology = result.topology
+    pair_result = result.routing.node_pair_results[0]
 
     logger.info(
         "cli.routes.summary | source=%d source_network=%d destination=%d destination_network=%d routes=%d",
@@ -130,10 +131,10 @@ def routes(
         topology[source],
         destination,
         topology[destination],
-        len(result.routes),
+        len(pair_result.routes),
     )
 
-    for index, route in enumerate(result.routes, start=1):
+    for index, route in enumerate(pair_result.routes, start=1):
         logger.info(
             "cli.routes.route | index=%d next_node=%s hops=%d delivery_time=%s volume=%s",
             index,
@@ -170,28 +171,20 @@ def security_plan(
     result = run_simulation(
         cp_path=str(cp_path),
         topology_path=str(topology_path),
-        source=source,
-        destination=destination,
+        node_pairs=((source, destination),),
+        security_models=(security_model,),
         curr_time=curr_time,
         num_routes=num_routes,
     )
-    annotated_routes = annotate_routes(
-        result.routes,
-        result.topology,
-        source_node=source,
-        destination_node=destination,
-    )
-    protection_plans = build_protection_plans(
-        annotated_routes,
-        model=security_model,
-    )
+    pair_result = result.security.node_pair_results[0]
+    security_result = pair_result.security_results[0]
 
     logger.info(
         "cli.security.summary | model=%s routes=%d",
         security_model.name.lower(),
-        len(annotated_routes),
+        len(pair_result.annotated_routes),
     )
-    for annotated, plan in zip(annotated_routes, protection_plans, strict=True):
+    for annotated, plan in zip(pair_result.annotated_routes, security_result.protection_plans, strict=True):
         logger.info(
             "cli.security.route | route_id=%s node_path=%s network_path=%s crossings=%d gateways=%s",
             annotated.route_id,
