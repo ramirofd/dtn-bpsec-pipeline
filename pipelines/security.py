@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from modules.network.cgr.models import Route
 from modules.network.topology import Topology
-from modules.security.annotated_routes import AnnotatedRoute, annotate_route, annotate_routes
+from modules.security.annotated_routes import AnnotatedRoute, annotate_routes
 from modules.security.planning import ProtectionPlan, build_protection_plan
 from modules.security.models import SecurityModelType
 
@@ -15,12 +15,43 @@ class SecurityPipelineResult:
     protection_plans: tuple[ProtectionPlan, ...]
 
 
+class SecurityPipeline:
+    def build_protection_plans(
+        self,
+        annotated_routes: tuple[AnnotatedRoute, ...] | list[AnnotatedRoute],
+        *,
+        model: SecurityModelType,
+    ) -> tuple[ProtectionPlan, ...]:
+        return tuple(build_protection_plan(route, model) for route in annotated_routes)
+
+    def build_artifacts(
+        self,
+        routes: tuple[Route, ...] | list[Route],
+        topology: Topology,
+        *,
+        source_node: int,
+        destination_node: int,
+        model: SecurityModelType,
+    ) -> SecurityPipelineResult:
+        annotated = annotate_routes(
+            routes,
+            topology,
+            source_node=source_node,
+            destination_node=destination_node,
+        )
+        plans = self.build_protection_plans(annotated, model=model)
+        return SecurityPipelineResult(
+            annotated_routes=annotated,
+            protection_plans=plans,
+        )
+
+
 def build_protection_plans(
     annotated_routes: tuple[AnnotatedRoute, ...] | list[AnnotatedRoute],
     *,
     model: SecurityModelType,
 ) -> tuple[ProtectionPlan, ...]:
-    return tuple(build_protection_plan(route, model) for route in annotated_routes)
+    return SecurityPipeline().build_protection_plans(annotated_routes, model=model)
 
 
 def build_security_artifacts(
@@ -31,41 +62,10 @@ def build_security_artifacts(
     destination_node: int,
     model: SecurityModelType,
 ) -> SecurityPipelineResult:
-    annotated = annotate_routes(
+    return SecurityPipeline().build_artifacts(
         routes,
         topology,
         source_node=source_node,
         destination_node=destination_node,
+        model=model,
     )
-    plans = build_protection_plans(annotated, model=model)
-    return SecurityPipelineResult(
-        annotated_routes=annotated,
-        protection_plans=plans,
-    )
-
-
-def build_protection_plan_for_annotated_route(
-    annotated_route: AnnotatedRoute,
-    *,
-    model: SecurityModelType,
-) -> ProtectionPlan:
-    return build_protection_plan(annotated_route, model)
-
-
-def build_security_plan_for_route(
-    route: Route,
-    topology: Topology,
-    *,
-    source_node: int,
-    destination_node: int,
-    model: SecurityModelType,
-    route_id: str | None = None,
-) -> tuple[AnnotatedRoute, ProtectionPlan]:
-    annotated = annotate_route(
-        route,
-        topology,
-        source_node=source_node,
-        destination_node=destination_node,
-        route_id=route_id,
-    )
-    return annotated, build_protection_plan_for_annotated_route(annotated, model=model)

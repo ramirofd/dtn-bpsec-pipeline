@@ -25,25 +25,23 @@ def main() -> None:
             len(result.topology.network_to_nodes),
             len(result.topology),
             result.contact_plan_size,
-            len(result.routing.node_pair_results),
+            len(result.routing.pairs),
         )
     )
 
-    for routing_pair, security_pair in zip(
-        result.routing.node_pair_results,
-        result.security.node_pair_results,
-        strict=True,
-    ):
+    for pair in result.routing.pairs:
+        routing_routes = result.routing.routes_by_pair[pair]
+        annotated_routes = result.security.annotated_routes_by_pair[pair]
         print(
             "\npair | %d->%d routes=%d"
             % (
-                routing_pair.source,
-                routing_pair.destination,
-                len(routing_pair.routes),
+                pair[0],
+                pair[1],
+                len(routing_routes),
             )
         )
 
-        for index, route in enumerate(routing_pair.routes, start=1):
+        for index, route in enumerate(routing_routes, start=1):
             print(
                 "route | index=%d next_node=%s delivery_time=%s volume=%s hops=%d"
                 % (
@@ -55,9 +53,9 @@ def main() -> None:
                 )
             )
 
-        for security_result in security_pair.security_results:
-            print(f"model | {security_result.model.name.lower()}")
-            for annotated, plan in zip(security_pair.annotated_routes, security_result.protection_plans, strict=True):
+        for model, plans_by_pair in result.security.plans_by_model.items():
+            print(f"model | {model.name.lower()}")
+            for annotated, plan in zip(annotated_routes, plans_by_pair[pair], strict=True):
                 print(
                     "plan_summary | route_id=%s node_path=%s network_path=%s crossings=%d gateways=%s operations=%d key_requirements=%d"
                     % (
