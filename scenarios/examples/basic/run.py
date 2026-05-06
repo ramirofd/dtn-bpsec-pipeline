@@ -6,13 +6,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from pipelines.routing import CGRYenRouting
-from pipelines.simulation import run_simulation
+from pipelines.simulation import SimulationPipeline
 
 
 def main() -> None:
     example_dir = Path(__file__).resolve().parent
+    pipeline = SimulationPipeline()
 
-    result = run_simulation(
+    result = pipeline.run(
         cp_path=str(example_dir / "contact_plan.json"),
         topology_path=str(example_dir / "topology.json"),
         curr_time=0,

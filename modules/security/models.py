@@ -7,7 +7,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum, auto
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from modules.security.annotated_routes import AnnotatedRoute
+    from modules.security.artifacts import ProtectionPlan
 
 
 class OperationResult(Enum):
@@ -58,4 +62,18 @@ class NodeAction(Enum):
 
 
 class SecurityModel(ABC):
-    pass
+    type: SecurityModelType
+
+    @property
+    def name(self) -> str:
+        return self.type.name.lower()
+
+    @abstractmethod
+    def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
+        raise NotImplementedError
+
+    def build_plans(
+        self,
+        annotated_routes: tuple[AnnotatedRoute, ...] | list[AnnotatedRoute],
+    ) -> tuple[ProtectionPlan, ...]:
+        return tuple(self.build_plan(route) for route in annotated_routes)

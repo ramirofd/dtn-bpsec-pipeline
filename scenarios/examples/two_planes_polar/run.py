@@ -9,20 +9,24 @@ if str(REPO_ROOT) not in sys.path:
 
 from modules.security.models import SecurityModelType
 from pipelines.routing import CGRYenRouting
-from pipelines.simulation import run_simulation
+from pipelines.simulation import SimulationPipeline
 
 
+SCENARIO_DIR = Path(__file__).resolve().parent
+DEFAULT_OUTPUT_DIR = SCENARIO_DIR / "results" / "run"
 DEFAULT_EXPORT_NAME = "pipeline_export.json"
 
 
 def main() -> None:
     args = _parse_args()
-    scenario_dir = Path(__file__).resolve().parent
-    output_path = scenario_dir / args.output
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / args.output
+    pipeline = SimulationPipeline()
 
-    result = run_simulation(
-        cp_path=str(scenario_dir / "contact_plan.json"),
-        topology_path=str(scenario_dir / "topology.json"),
+    result = pipeline.run(
+        cp_path=str(SCENARIO_DIR / "contact_plan.json"),
+        topology_path=str(SCENARIO_DIR / "topology.json"),
         security_models=tuple(SecurityModelType),
         curr_time=0,
         routing_algorithm=CGRYenRouting(max_routes=args.max_routes),
@@ -100,7 +104,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         default=DEFAULT_EXPORT_NAME,
-        help="Export file name relative to this scenario directory.",
+        help="Export file name inside the selected output directory.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help="Directory where the export JSON will be written.",
     )
     parser.add_argument(
         "--max-routes",

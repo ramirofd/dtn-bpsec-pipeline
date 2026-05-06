@@ -17,7 +17,7 @@ from pipelines.route_activation import (
     RouteActivationPlanner,
     attach_route_activation_constraints,
 )
-from pipelines.simulation import run_simulation
+from pipelines.simulation import SimulationPipeline
 
 
 DEFAULT_CP_PATH = Path(__file__).resolve().parent / "contact_plan.json"
@@ -80,7 +80,7 @@ def solve_route_activation_for_model(
     curr_time: int = DEFAULT_CURR_TIME,
     num_routes: int = DEFAULT_NUM_ROUTES,
 ) -> ModelOptimizationSummary:
-    result = run_simulation(
+    result = SimulationPipeline().run(
         cp_path=str(DEFAULT_CP_PATH),
         topology_path=str(DEFAULT_TOPOLOGY_PATH),
         security_models=(security_model,),

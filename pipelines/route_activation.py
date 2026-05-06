@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modules.security.keys import KeyScope
-from modules.security.planning import ProtectionPlan
+from modules.security.artifacts import ProtectionPlan
 
 if TYPE_CHECKING:
     import gurobipy as gp
