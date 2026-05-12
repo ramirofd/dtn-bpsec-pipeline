@@ -36,3 +36,4 @@ dist/
 
 # OS files
 .DS_Store
+# */gurobi.lic

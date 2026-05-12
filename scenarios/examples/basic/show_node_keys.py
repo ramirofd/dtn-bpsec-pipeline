@@ -40,8 +40,8 @@ def main() -> None:
         routing_algorithm=CGRYenRouting(max_routes=2),
     )
 
-    for pair in result.security.pairs:
-        annotated_routes = result.security.annotated_routes_by_pair[pair]
+    for pair in result.annotation.pairs:
+        annotated_routes = result.annotation.annotated_routes_by_pair[pair]
         routes_with_hops = [route for route in annotated_routes if len(route.hops) >= 1]
         if not routes_with_hops:
             continue

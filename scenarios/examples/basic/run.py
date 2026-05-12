@@ -32,7 +32,7 @@ def main() -> None:
 
     for pair in result.routing.pairs:
         routing_routes = result.routing.routes_by_pair[pair]
-        annotated_routes = result.security.annotated_routes_by_pair[pair]
+        annotated_routes = result.annotation.annotated_routes_by_pair[pair]
         print(
             "\npair | %d->%d routes=%d"
             % (

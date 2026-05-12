@@ -93,8 +93,8 @@ def solve_route_activation_for_model(
 
     plans_by_pair = result.security.plans_by_model[security_model]
 
-    for pair in result.security.pairs:
-        annotated_routes = result.security.annotated_routes_by_pair[pair]
+    for pair in result.annotation.pairs:
+        annotated_routes = result.annotation.annotated_routes_by_pair[pair]
         total_candidate_routes += len(annotated_routes)
         for annotated, plan in zip(
             annotated_routes,
@@ -129,7 +129,7 @@ def solve_route_activation_for_model(
 
     return ModelOptimizationSummary(
         model=security_model,
-        pair_count=len(result.security.pairs),
+        pair_count=len(result.annotation.pairs),
         candidate_routes=total_candidate_routes,
         unique_keys=len(planning.key_scopes),
         max_keys=max_keys,

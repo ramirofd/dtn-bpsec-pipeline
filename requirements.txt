@@ -1,3 +1,0 @@
-pydantic>=2.0,<3.0
-gurobipy>=13.0.1
-matplotlib>=3.8,<4.0

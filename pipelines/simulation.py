@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 from modules.network.py_cgr_lib import Route, cp_load
 from modules.network.topology import Topology, topology_load
@@ -37,11 +37,7 @@ class AnnotationBatchResult:
 
 @dataclass(slots=True, frozen=True)
 class SecurityBatchResult:
-    topology: Topology
-    contact_plan_size: int
     pairs: tuple[NodePair, ...]
-    routes_by_pair: dict[NodePair, tuple[Route, ...]]
-    annotated_routes_by_pair: dict[NodePair, tuple[AnnotatedRoute, ...]]
     plans_by_model: dict[SecurityModelType, dict[NodePair, tuple[ProtectionPlan, ...]]]
 
 
@@ -127,11 +123,7 @@ class SecurityPlanningStage:
         self,
         annotation: AnnotationBatchResult,
         *,
-        security_models: (
-            list[SecurityModel | SecurityModelType]
-            | tuple[SecurityModel | SecurityModelType, ...]
-            | None
-        ) = None,
+        security_models: Sequence[SecurityModel | SecurityModelType] | None = None,
     ) -> SecurityBatchResult:
         resolved_models = resolve_security_models(security_models)
         plans_by_model = {
@@ -145,11 +137,7 @@ class SecurityPlanningStage:
             for model in resolved_models
         }
         return SecurityBatchResult(
-            topology=annotation.topology,
-            contact_plan_size=annotation.contact_plan_size,
             pairs=annotation.pairs,
-            routes_by_pair=annotation.routes_by_pair,
-            annotated_routes_by_pair=annotation.annotated_routes_by_pair,
             plans_by_model=plans_by_model,
         )
 
@@ -171,11 +159,7 @@ class SimulationPipeline:
         *,
         cp_path: str,
         topology_path: str,
-        security_models: (
-            list[SecurityModel | SecurityModelType]
-            | tuple[SecurityModel | SecurityModelType, ...]
-            | None
-        ) = None,
+        security_models: Sequence[SecurityModel | SecurityModelType] | None = None,
         curr_time: int = 0,
         routing_algorithm: RoutingAlgorithm | None = None,
         num_routes: int = 3,
@@ -204,6 +188,7 @@ class SimulationPipeline:
             annotation=annotation,
             security=security,
         )
+
 
 def _enumerate_node_pairs(topology: Topology) -> tuple[NodePair, ...]:
     ordered_nodes = tuple(sorted(topology))

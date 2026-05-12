@@ -24,11 +24,15 @@ bpsec-keys/
 │   │   ├── py_cgr_lib.py
 │   │   └── cgr/
 │   └── security/
+│       ├── __init__.py
 │       ├── annotated_routes.py
+│       ├── artifacts.py
 │       ├── planning.py
 │       ├── keys.py
 │       ├── roles.py
 │       └── models.py
+└── tests/
+    └── test_security_pipeline.py
 └── scenarios/examples/
     ├── basic/
     └── two_planes_polar/
@@ -45,6 +49,9 @@ bpsec-keys/
    opcional de activacion y optimizacion.
 
 `SimulationPipeline.run(...)` orquesta esas etapas de punta a punta.
+
+`modules.security` expone la API publica de la capa de seguridad y concentra
+los modelos concretos, artefactos y helpers de resolucion.
 
 ## Uso desde Python
 
@@ -90,4 +97,10 @@ Instalacion:
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+Tests de regresion:
+
+```bash
+python -m unittest tests.test_security_pipeline
 ```

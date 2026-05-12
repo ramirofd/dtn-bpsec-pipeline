@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC
+from typing import Sequence
 
 from modules.security.annotated_routes import AnnotatedHop, AnnotatedRoute, BoundaryCrossing
 from modules.security.artifacts import NodeSecurityRequirement, ProtectionOperation, ProtectionPlan
@@ -10,7 +11,7 @@ from modules.security.keys import KeyRequirement
 from modules.security.models import KeyType, NodeAction, SecurityModel, SecurityModelType, SecurityService
 
 
-class SecurityPlanningModel(SecurityModel, ABC):
+class BaseSecurityModel(SecurityModel, ABC):
     service = SecurityService.BCB
 
     def _build_plan(
@@ -135,7 +136,7 @@ class SecurityPlanningModel(SecurityModel, ABC):
         )
 
 
-class HopByHopSecurityModel(SecurityPlanningModel):
+class HopByHopSecurityModel(BaseSecurityModel):
     type = SecurityModelType.HOP_BY_HOP
 
     def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
@@ -159,7 +160,7 @@ class HopByHopSecurityModel(SecurityPlanningModel):
         return self._build_plan(annotated_route, operations)
 
 
-class EndToEndSecurityModel(SecurityPlanningModel):
+class EndToEndSecurityModel(BaseSecurityModel):
     type = SecurityModelType.END_TO_END
 
     def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
@@ -183,7 +184,7 @@ class EndToEndSecurityModel(SecurityPlanningModel):
         return self._build_plan(annotated_route, (operation,))
 
 
-class EdgeByEdgeSecurityModel(SecurityPlanningModel):
+class EdgeByEdgeSecurityModel(BaseSecurityModel):
     type = SecurityModelType.EDGE_BY_EDGE
 
     def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
@@ -227,7 +228,7 @@ class EdgeByEdgeSecurityModel(SecurityPlanningModel):
         return self._build_plan(annotated_route, tuple(operations))
 
 
-class EdgeToEdgeSecurityModel(SecurityPlanningModel):
+class EdgeToEdgeSecurityModel(BaseSecurityModel):
     type = SecurityModelType.EDGE_TO_EDGE
 
     def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
@@ -333,11 +334,7 @@ def get_security_model(
 
 
 def resolve_security_models(
-    security_models: (
-        list[SecurityModel | SecurityModelType]
-        | tuple[SecurityModel | SecurityModelType, ...]
-        | None
-    ),
+    security_models: Sequence[SecurityModel | SecurityModelType] | None,
 ) -> tuple[SecurityModel, ...]:
     if security_models is None:
         return DEFAULT_SECURITY_MODELS
@@ -353,6 +350,21 @@ def build_protection_plan(
 
 def build_protection_plans(
     model: SecurityModel | SecurityModelType,
-    annotated_routes: tuple[AnnotatedRoute, ...] | list[AnnotatedRoute],
+    annotated_routes: Sequence[AnnotatedRoute],
 ) -> tuple[ProtectionPlan, ...]:
     return get_security_model(model).build_plans(annotated_routes)
+
+
+__all__ = [
+    "BaseSecurityModel",
+    "HopByHopSecurityModel",
+    "EndToEndSecurityModel",
+    "EdgeByEdgeSecurityModel",
+    "EdgeToEdgeSecurityModel",
+    "DEFAULT_SECURITY_MODELS",
+    "SECURITY_MODEL_REGISTRY",
+    "get_security_model",
+    "resolve_security_models",
+    "build_protection_plan",
+    "build_protection_plans",
+]
