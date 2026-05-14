@@ -2,7 +2,7 @@
 
 from modules.security.annotated_routes import AnnotatedHop, AnnotatedRoute, BoundaryCrossing, annotate_route, annotate_routes
 from modules.security.artifacts import NodeSecurityRequirement, ProtectionOperation, ProtectionPlan
-from modules.security.keys import KeyRequirement, KeyScope
+from modules.security.keys import KeyRequirement, KeyScope, normalize_key_scope
 from modules.security.models import KeyType, NodeAction, SecurityModel, SecurityModelType, SecurityService
 from modules.security.planning import (
     DEFAULT_SECURITY_MODELS,
@@ -30,6 +30,7 @@ __all__ = [
     "ProtectionPlan",
     "KeyRequirement",
     "KeyScope",
+    "normalize_key_scope",
     "SecurityModel",
     "SecurityModelType",
     "SecurityService",

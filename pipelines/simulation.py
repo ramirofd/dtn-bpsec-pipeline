@@ -38,6 +38,7 @@ class AnnotationBatchResult:
 @dataclass(slots=True, frozen=True)
 class SecurityBatchResult:
     pairs: tuple[NodePair, ...]
+    symmetric_keys: bool
     plans_by_model: dict[SecurityModelType, dict[NodePair, tuple[ProtectionPlan, ...]]]
 
 
@@ -124,6 +125,7 @@ class SecurityPlanningStage:
         annotation: AnnotationBatchResult,
         *,
         security_models: Sequence[SecurityModel | SecurityModelType] | None = None,
+        symmetric_keys: bool = False,
     ) -> SecurityBatchResult:
         resolved_models = resolve_security_models(security_models)
         plans_by_model = {
@@ -138,6 +140,7 @@ class SecurityPlanningStage:
         }
         return SecurityBatchResult(
             pairs=annotation.pairs,
+            symmetric_keys=symmetric_keys,
             plans_by_model=plans_by_model,
         )
 
@@ -160,12 +163,32 @@ class SimulationPipeline:
         cp_path: str,
         topology_path: str,
         security_models: Sequence[SecurityModel | SecurityModelType] | None = None,
+        symmetric_keys: bool = False,
         curr_time: int = 0,
         routing_algorithm: RoutingAlgorithm | None = None,
         num_routes: int = 3,
     ) -> SimulationResult:
-        topology = topology_load(topology_path)
-        contact_plan = cp_load(cp_path)
+        return self.run_loaded(
+            topology=topology_load(topology_path),
+            contact_plan=cp_load(cp_path),
+            security_models=security_models,
+            symmetric_keys=symmetric_keys,
+            curr_time=curr_time,
+            routing_algorithm=routing_algorithm,
+            num_routes=num_routes,
+        )
+
+    def run_loaded(
+        self,
+        *,
+        topology: Topology,
+        contact_plan: ContactPlan,
+        security_models: Sequence[SecurityModel | SecurityModelType] | None = None,
+        symmetric_keys: bool = False,
+        curr_time: int = 0,
+        routing_algorithm: RoutingAlgorithm | None = None,
+        num_routes: int = 3,
+    ) -> SimulationResult:
         routing_stage = (
             RoutingStage(routing_algorithm, default_num_routes=num_routes)
             if routing_algorithm is not None
@@ -179,7 +202,11 @@ class SimulationPipeline:
             num_routes=num_routes,
         )
         annotation = self.annotation_stage.annotate(routing)
-        security = self.security_stage.build_batch(annotation, security_models=security_models)
+        security = self.security_stage.build_batch(
+            annotation,
+            security_models=security_models,
+            symmetric_keys=symmetric_keys,
+        )
 
         return SimulationResult(
             topology=topology,

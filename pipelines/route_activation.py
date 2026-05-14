@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from modules.security.keys import KeyScope
+from modules.security.keys import KeyScope, normalize_key_scope
 from modules.security.artifacts import ProtectionPlan
 
 if TYPE_CHECKING:
@@ -58,11 +58,16 @@ class RouteActivationPlanner:
                     )
                 )
 
-        return self.build(protection_plans)
+        return self.build(
+            protection_plans,
+            symmetric_keys=security_batch.symmetric_keys,
+        )
 
     def build(
         self,
         protection_plans: tuple[ProtectionPlan, ...] | list[ProtectionPlan],
+        *,
+        symmetric_keys: bool = False,
     ) -> RouteActivationPlanning:
         route_requirements: list[RouteActivationRequirement] = []
         all_key_scopes: list[KeyScope] = []
@@ -74,7 +79,10 @@ class RouteActivationPlanner:
             operation_ids: list[str] = []
 
             for requirement in plan.key_requirements:
-                scope = requirement.scope
+                scope = normalize_key_scope(
+                    requirement.scope,
+                    symmetric=symmetric_keys,
+                )
                 if scope not in seen_route_scopes:
                     route_scopes.append(scope)
                     seen_route_scopes.add(scope)

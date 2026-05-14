@@ -13,6 +13,9 @@ class KeyScope:
     source_id: int
     target_id: int
 
+    def __repr__(self):
+        return f"{self.key_type.name}({self.source_id}->{self.target_id})"
+
 
 @dataclass(slots=True, frozen=True)
 class KeyRecord:
@@ -40,6 +43,12 @@ class KeyRequirement:
             source_id=self.source_id,
             target_id=self.target_id,
         )
+
+    def __repr__(self):
+        return f"{self.scope}"
+
+    def __str__(self):
+        return f"{self.scope}"
 
 
 @dataclass(slots=True, frozen=True)
@@ -95,3 +104,15 @@ class KeyInventory:
             (scope.key_type.name, scope.source_id, scope.target_id): [record.key_id for record in records]
             for scope, records in self._records.items()
         }
+
+
+def normalize_key_scope(scope: KeyScope, *, symmetric: bool = False) -> KeyScope:
+    if not symmetric or scope.key_type not in {KeyType.NODE_TO_NODE, KeyType.GROUP_TO_GROUP}:
+        return scope
+
+    normalized_source, normalized_target = sorted((scope.source_id, scope.target_id))
+    return KeyScope(
+        key_type=scope.key_type,
+        source_id=normalized_source,
+        target_id=normalized_target,
+    )

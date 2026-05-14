@@ -30,6 +30,9 @@ class BoundaryCrossing:
     entrance_node: int
     from_network: int
     to_network: int
+    
+    def __repr__(self):
+        return f"{self.exit_node}->{self.entrance_node}"
 
 
 @dataclass(slots=True, frozen=True)
