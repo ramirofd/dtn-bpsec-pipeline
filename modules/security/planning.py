@@ -97,6 +97,31 @@ class BaseSecurityModel(SecurityModel, ABC):
             rationale=rationale,
         )
 
+    def _build_endpoint_span_operation(
+        self,
+        *,
+        annotated_route: AnnotatedRoute,
+        hops: tuple[AnnotatedHop, ...],
+        operation_suffix: str,
+        rationale: str,
+    ) -> ProtectionOperation:
+        first_hop = hops[0]
+        last_hop = hops[-1]
+        return ProtectionOperation(
+            operation_id=f"{annotated_route.route_id}:{self.name}:{operation_suffix}",
+            model=self.type,
+            service=self.service,
+            source_node=first_hop.from_node,
+            acceptor_node=last_hop.to_node,
+            target_hop_indexes=tuple(hop.hop_index for hop in hops),
+            source_network=first_hop.from_network,
+            acceptor_network=last_hop.to_network,
+            required_key_type=KeyType.NODE_TO_NODE,
+            key_source_id=first_hop.from_node,
+            key_target_id=last_hop.to_node,
+            rationale=rationale,
+        )
+
     def _build_node_requirements(
         self,
         operation: ProtectionOperation,
@@ -188,40 +213,96 @@ class EdgeByEdgeSecurityModel(BaseSecurityModel):
     type = SecurityModelType.EDGE_BY_EDGE
 
     def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
-        operations: list[ProtectionOperation] = []
-        segment_hops: list[AnnotatedHop] = []
-        boundary_by_hop = {
-            crossing.hop_index: crossing for crossing in annotated_route.boundary_crossings
-        }
-
-        for hop in annotated_route.hops:
-            if hop.crosses_network_boundary:
-                if segment_hops:
-                    operations.append(
-                        self._build_intra_network_segment_operation(
-                            annotated_route=annotated_route,
-                            hops=tuple(segment_hops),
-                            rationale="Protect the current intra-network segment until the next gateway",
-                        )
-                    )
-                    segment_hops.clear()
-                operations.append(
-                    self._build_boundary_operation(
-                        annotated_route=annotated_route,
-                        crossing=boundary_by_hop[hop.hop_index],
-                        key_type=KeyType.GROUP_TO_GROUP,
-                    )
+        if (
+            not annotated_route.boundary_crossings
+            or annotated_route.source_network == annotated_route.destination_network
+        ):
+            operation = self._build_endpoint_span_operation(
+                annotated_route=annotated_route,
+                hops=annotated_route.hops,
+                operation_suffix="local",
+                rationale="Protect the whole route between the bundle endpoints",
+            )
+            return self._build_plan(
+                annotated_route,
+                (operation,),
+                notes=(
+                    "Route stays within one network; edge-by-edge degenerates to local intra-network protection.",
                 )
-                continue
+                if not annotated_route.boundary_crossings
+                else (
+                    "Route exits and re-enters the same endpoint network; edge-by-edge collapses to a single endpoint span.",
+                ),
+            )
 
-            segment_hops.append(hop)
+        operations: list[ProtectionOperation] = []
+        first_crossing = annotated_route.boundary_crossings[0]
+        crossings = annotated_route.boundary_crossings
 
-        if segment_hops:
+        destination_entry_crossing = next(
+            crossing
+            for crossing in crossings
+            if crossing.to_network == annotated_route.destination_network
+        )
+
+        source_segment_hops = tuple(
+            hop for hop in annotated_route.hops if hop.hop_index < first_crossing.hop_index
+        )
+        if source_segment_hops:
             operations.append(
                 self._build_intra_network_segment_operation(
                     annotated_route=annotated_route,
-                    hops=tuple(segment_hops),
-                    rationale="Protect the final intra-network segment after the last gateway",
+                    hops=source_segment_hops,
+                    rationale="Protect the source-network segment from the bundle source to the exit gateway",
+                )
+            )
+
+        for index, crossing in enumerate(crossings):
+            operations.append(
+                self._build_boundary_operation(
+                    annotated_route=annotated_route,
+                    crossing=crossing,
+                    key_type=KeyType.GROUP_TO_GROUP,
+                )
+            )
+
+            if crossing == destination_entry_crossing:
+                break
+
+            next_crossing = crossings[index + 1]
+            middle_segment_hops = tuple(
+                hop
+                for hop in annotated_route.hops
+                if crossing.hop_index < hop.hop_index < next_crossing.hop_index
+            )
+            if middle_segment_hops:
+                operations.append(
+                    self._build_intra_network_segment_operation(
+                        annotated_route=annotated_route,
+                        hops=middle_segment_hops,
+                        rationale=(
+                            "Protect the intra-network segment between an entrance gateway "
+                            "and the next exit gateway"
+                        ),
+                    )
+                )
+
+        destination_segment_hops = tuple(
+            hop for hop in annotated_route.hops if hop.hop_index > destination_entry_crossing.hop_index
+        )
+        if destination_segment_hops:
+            operations.append(
+                self._build_endpoint_span_operation(
+                    annotated_route=annotated_route,
+                    hops=destination_segment_hops,
+                    operation_suffix=(
+                        f"destination:{destination_segment_hops[0].hop_index}-"
+                        f"{destination_segment_hops[-1].hop_index}"
+                    ),
+                    rationale=(
+                        "Protect the destination-network segment from the entrance gateway "
+                        "to the bundle destination"
+                    ),
                 )
             )
 
@@ -232,23 +313,34 @@ class EdgeToEdgeSecurityModel(BaseSecurityModel):
     type = SecurityModelType.EDGE_TO_EDGE
 
     def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
-        if not annotated_route.boundary_crossings:
-            operation = self._build_intra_network_segment_operation(
+        if (
+            not annotated_route.boundary_crossings
+            or annotated_route.source_network == annotated_route.destination_network
+        ):
+            operation = self._build_endpoint_span_operation(
                 annotated_route=annotated_route,
                 hops=annotated_route.hops,
-                rationale="Protect the whole intra-network route as a single edge segment",
+                operation_suffix="local",
+                rationale="Protect the whole route between the bundle endpoints",
             )
             return self._build_plan(
                 annotated_route,
                 (operation,),
                 notes=(
                     "Route stays within one network; edge-to-edge degenerates to local intra-network protection.",
-                ),
+                )
+                if not annotated_route.boundary_crossings
+                else (),
             )
 
-        operations: list[ProtectionOperation] = []
         first_crossing = annotated_route.boundary_crossings[0]
-        last_crossing = annotated_route.boundary_crossings[-1]
+        destination_entry_crossing = next(
+            crossing
+            for crossing in annotated_route.boundary_crossings
+            if crossing.to_network == annotated_route.destination_network
+        )
+
+        operations: list[ProtectionOperation] = []
 
         source_segment_hops = tuple(
             hop for hop in annotated_route.hops if hop.hop_index < first_crossing.hop_index
@@ -268,11 +360,11 @@ class EdgeToEdgeSecurityModel(BaseSecurityModel):
                 model=self.type,
                 service=self.service,
                 source_node=first_crossing.exit_node,
-                acceptor_node=last_crossing.entrance_node,
+                acceptor_node=destination_entry_crossing.entrance_node,
                 target_hop_indexes=tuple(
                     hop.hop_index
                     for hop in annotated_route.hops
-                    if first_crossing.hop_index <= hop.hop_index <= last_crossing.hop_index
+                    if first_crossing.hop_index <= hop.hop_index <= destination_entry_crossing.hop_index
                 ),
                 source_network=first_crossing.from_network,
                 acceptor_network=annotated_route.destination_network,
@@ -287,13 +379,17 @@ class EdgeToEdgeSecurityModel(BaseSecurityModel):
         )
 
         destination_segment_hops = tuple(
-            hop for hop in annotated_route.hops if hop.hop_index > last_crossing.hop_index
+            hop for hop in annotated_route.hops if hop.hop_index > destination_entry_crossing.hop_index
         )
         if destination_segment_hops:
             operations.append(
-                self._build_intra_network_segment_operation(
+                self._build_endpoint_span_operation(
                     annotated_route=annotated_route,
                     hops=destination_segment_hops,
+                    operation_suffix=(
+                        f"destination:{destination_segment_hops[0].hop_index}-"
+                        f"{destination_segment_hops[-1].hop_index}"
+                    ),
                     rationale=(
                         "Protect the destination-network segment from the entrance gateway "
                         "to the bundle destination"
