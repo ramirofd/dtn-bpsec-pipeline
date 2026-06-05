@@ -113,8 +113,8 @@ def plot_selected_keys_by_model(
         palette=palette_for(df["model"]) if "model" in df else None,
         normalize_y=normalize,
         y_percent_scale=1.0 if normalize else None,
-        y_label="Cantidad minima de llaves" + (" (%)" if normalize else ""),
-        title=title or "Llaves minimas por modelo",
+        y_label="Minimum keys" + (" (%)" if normalize else ""),
+        title=title or "Minimum keys by model",
     )
 
 
@@ -132,8 +132,8 @@ def plot_selected_routes_by_model(
         palette=palette_for(df["model"]) if "model" in df else None,
         normalize_y=normalize,
         y_percent_scale=1.0 if normalize else None,
-        y_label="Cantidad de rutas seleccionadas" + (" (%)" if normalize else ""),
-        title=title or "Rutas seleccionadas por modelo",
+        y_label="Selected routes" + (" (%)" if normalize else ""),
+        title=title or "Selected routes by model",
     )
 
 
@@ -148,7 +148,7 @@ def plot_full_connectivity_key_reuse(
         trace,
         metric=metric,
         ax=ax,
-        title=title or "Reuso de llaves en la solucion optima",
+        title=title or "Key reuse in the optimal solution",
     )
 
 
@@ -163,7 +163,7 @@ def plot_full_connectivity_gateway_usage(
         trace,
         metric=metric,
         ax=ax,
-        title=title or "Uso de gateways en la solucion optima",
+        title=title or "Gateway usage in the optimal solution",
     )
 
 
@@ -178,5 +178,5 @@ def plot_full_connectivity_network_crossings(
         trace,
         metric=metric,
         ax=ax,
-        title=title or "Cruces entre redes en la solucion optima",
+        title=title or "Cross-network crossings in the optimal solution",
     )

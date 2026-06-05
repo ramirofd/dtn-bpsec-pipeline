@@ -147,9 +147,9 @@ def plot_connectivity_vs_budget(
         normalize_x=normalize_x,
         x_percent_scale=1.0 if normalize_x else None,
         y_percent_scale=100,
-        x_label="Cantidad de llaves activadas" + (" (%)" if normalize_x else ""),
-        y_label="Conectividad alcanzada (%)",
-        title=title or "Conectividad alcanzada vs llaves activadas",
+        x_label="Active keys" + (" (%)" if normalize_x else ""),
+        y_label="Achieved connectivity (%)",
+        title=title or "Achieved connectivity vs active keys",
     )
 
 
@@ -165,9 +165,9 @@ def plot_budget_pair_coverage_heatmap(
         sweep_label="max_keys",
         all_pairs=all_pairs,
         ax=ax,
-        x_label="Cantidad de llaves activadas",
-        y_label="Par",
-        title=title or "Cobertura de pares por presupuesto",
+        x_label="Active keys",
+        y_label="Pair",
+        title=title or "Pair coverage by budget",
     )
 
 
@@ -183,9 +183,9 @@ def plot_budget_key_scope_heatmap(
         sweep_label="max_keys",
         value_col=value_col,
         ax=ax,
-        x_label="Cantidad de llaves activadas",
-        y_label="Llave",
-        title=title or "Activacion de llaves por presupuesto",
+        x_label="Active keys",
+        y_label="Key scope",
+        title=title or "Key activation by budget",
     )
 
 
@@ -201,9 +201,9 @@ def plot_budget_contact_usage_heatmap(
         sweep_label="max_keys",
         value_col=value_col,
         ax=ax,
-        x_label="Cantidad de llaves activadas",
-        y_label="Contacto",
-        title=title or "Uso de contactos por presupuesto",
+        x_label="Active keys",
+        y_label="Contact",
+        title=title or "Contact usage by budget",
     )
 
 
@@ -219,7 +219,7 @@ def plot_budget_network_crossing_heatmap(
         sweep_label="max_keys",
         value_col=value_col,
         ax=ax,
-        x_label="Cantidad de llaves activadas",
-        y_label="Cruce entre redes",
-        title=title or "Cruces entre redes por presupuesto",
+        x_label="Active keys",
+        y_label="Cross-network crossing",
+        title=title or "Cross-network crossings by budget",
     )

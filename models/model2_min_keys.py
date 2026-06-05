@@ -137,9 +137,9 @@ def plot_selected_keys_vs_connectivity(
         normalize_y=normalize_y,
         x_percent_scale=100,
         y_percent_scale=1.0 if normalize_y else None,
-        x_label="Conectividad objetivo (%)",
-        y_label="Cantidad minima de llaves activadas" + (" (%)" if normalize_y else ""),
-        title=title or "Llaves minimas vs conectividad objetivo",
+        x_label="Target connectivity (%)",
+        y_label="Minimum active keys" + (" (%)" if normalize_y else ""),
+        title=title or "Minimum keys vs target connectivity",
     )
 
 
@@ -155,9 +155,9 @@ def plot_connectivity_pair_coverage_heatmap(
         sweep_label="target_connectivity_pct",
         all_pairs=all_pairs,
         ax=ax,
-        x_label="Conectividad objetivo (%)",
-        y_label="Par",
-        title=title or "Cobertura de pares por conectividad objetivo",
+        x_label="Target connectivity (%)",
+        y_label="Pair",
+        title=title or "Pair coverage by target connectivity",
     )
 
 
@@ -173,9 +173,9 @@ def plot_connectivity_key_scope_heatmap(
         sweep_label="target_connectivity_pct",
         value_col=value_col,
         ax=ax,
-        x_label="Conectividad objetivo (%)",
-        y_label="Llave",
-        title=title or "Activacion de llaves por conectividad objetivo",
+        x_label="Target connectivity (%)",
+        y_label="Key scope",
+        title=title or "Key activation by target connectivity",
     )
 
 
@@ -191,9 +191,9 @@ def plot_connectivity_contact_usage_heatmap(
         sweep_label="target_connectivity_pct",
         value_col=value_col,
         ax=ax,
-        x_label="Conectividad objetivo (%)",
-        y_label="Contacto",
-        title=title or "Uso de contactos por conectividad objetivo",
+        x_label="Target connectivity (%)",
+        y_label="Contact",
+        title=title or "Contact usage by target connectivity",
     )
 
 
@@ -209,7 +209,7 @@ def plot_connectivity_network_crossing_heatmap(
         sweep_label="target_connectivity_pct",
         value_col=value_col,
         ax=ax,
-        x_label="Conectividad objetivo (%)",
-        y_label="Cruce entre redes",
-        title=title or "Cruces entre redes por conectividad objetivo",
+        x_label="Target connectivity (%)",
+        y_label="Cross-network crossing",
+        title=title or "Cross-network crossings by target connectivity",
     )

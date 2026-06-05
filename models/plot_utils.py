@@ -8,26 +8,52 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from modules.security.keys import KeyScope
-from modules.security.models import KeyType
+from modules.security.models import KeyType, SecurityModelType
 from pipelines.route_activation import RouteActivationSelection
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 
+MODEL_DISPLAY_ORDER = ["HBH", "E2E", "EbE", "EtE"]
+
 MODEL_PALETTE = {
-    "HOP_BY_HOP": "#4c78a8",
-    "END_TO_END": "#f58518",
-    "EDGE_BY_EDGE": "#54a24b",
-    "EDGE_TO_EDGE": "#e45756",
-    "hop_by_hop": "#4c78a8",
-    "end_to_end": "#f58518",
-    "edge_by_edge": "#54a24b",
-    "edge_to_edge": "#e45756",
-    "hbh": "#4c78a8",
-    "e2e": "#f58518",
-    "ebe": "#54a24b",
-    "ete": "#e45756",
+    "HBH": "#0f4c5c",
+    "E2E": "#e36414",
+    "EbE": "#6a994e",
+    "EtE": "#8d0801",
+}
+
+SECONDARY_COLORS = {
+    "routes": "#4f6d7a",
+    "keys": "#f0a35b",
+    "pairs": "#86b36b",
+    "gateways": "#d08c60",
+    "crossings": "#c15c5c",
+}
+
+_SECONDARY_SEQUENCE = (
+    "#5e7f8d",
+    "#f0a35b",
+    "#86b36b",
+    "#c15c5c",
+)
+
+_MODEL_LABEL_ALIASES = {
+    SecurityModelType.HOP_BY_HOP: "HBH",
+    SecurityModelType.END_TO_END: "E2E",
+    SecurityModelType.EDGE_BY_EDGE: "EbE",
+    SecurityModelType.EDGE_TO_EDGE: "EtE",
+    "hop_by_hop": "HBH",
+    "end_to_end": "E2E",
+    "edge_by_edge": "EbE",
+    "edge_to_edge": "EtE",
+    "hbh": "HBH",
+    "e2e": "E2E",
+    "ebe": "EbE",
+    "ete": "EtE",
+    "edbed": "EbE",
+    "ed2ed": "EtE",
 }
 
 KEY_TYPE_LABELS = {
@@ -43,8 +69,44 @@ def set_plot_theme(style: str = "whitegrid") -> None:
     sns.set_theme(style=style)
 
 
+def format_model_label(value: Any) -> str:
+    """Return the canonical short label used to display a security model."""
+    if isinstance(value, SecurityModelType):
+        return _MODEL_LABEL_ALIASES[value]
+
+    raw_value = getattr(value, "name", value)
+    if isinstance(raw_value, str):
+        stripped = raw_value.strip()
+        normalized = stripped.lower().replace("-", "_").replace(" ", "_")
+        compact = normalized.replace("_", "")
+        return _MODEL_LABEL_ALIASES.get(normalized, _MODEL_LABEL_ALIASES.get(compact, stripped))
+
+    return str(raw_value)
+
+
+def format_model_series(values: Sequence[Any] | pd.Series) -> pd.Series:
+    """Return a series with canonical model labels and stable ordering."""
+    if isinstance(values, pd.Series):
+        base = values.copy()
+    else:
+        base = pd.Series(list(values))
+
+    formatted = base.map(format_model_label)
+    if formatted.isin(MODEL_DISPLAY_ORDER).all():
+        formatted = pd.Series(
+            pd.Categorical(
+                formatted,
+                categories=MODEL_DISPLAY_ORDER,
+                ordered=True,
+            ),
+            index=formatted.index,
+            name=formatted.name,
+        )
+    return formatted
+
+
 def palette_for(
-    values: Sequence[str] | pd.Series,
+    values: Sequence[Any] | pd.Series,
     *,
     palette: Mapping[str, str] | None = None,
     default_color: str = "#4c78a8",
@@ -53,11 +115,32 @@ def palette_for(
     resolved_palette = dict(MODEL_PALETTE)
     if palette is not None:
         resolved_palette.update(palette)
-    unique_values = list(dict.fromkeys(str(value) for value in values))
+    unique_values = list(dict.fromkeys(value for value in values))
     return {
-        value: resolved_palette.get(value, default_color)
+        value: resolved_palette.get(format_model_label(value), default_color)
         for value in unique_values
     }
+
+
+def secondary_palette(values: Sequence[Any] | None = None) -> tuple[str, ...] | dict[str, str]:
+    """Return secondary colors for non-model plots using the same visual family."""
+    if values is None:
+        return _SECONDARY_SEQUENCE
+
+    unique_values = list(dict.fromkeys(str(value) for value in values))
+    return {
+        value: _SECONDARY_SEQUENCE[index % len(_SECONDARY_SEQUENCE)]
+        for index, value in enumerate(unique_values)
+    }
+
+
+def auxiliary_cmap(kind: str) -> Any:
+    """Build a sequential seaborn colormap from the shared secondary palette."""
+    _, sns, _ = _load_plot_modules()
+    return sns.light_palette(
+        SECONDARY_COLORS.get(kind, next(iter(SECONDARY_COLORS.values()))),
+        as_cmap=True,
+    )
 
 
 def format_key_scope(scope: KeyScope) -> str:
@@ -339,7 +422,7 @@ def plot_metric_curve(
     linewidth: float = 2.0,
 ) -> Axes:
     if df.empty:
-        return _empty_plot(ax, message="Sin datos para graficar.")
+        return _empty_plot(ax, message="No data available to plot.")
 
     _, sns, mtick = _load_plot_modules()
     ax = _resolve_ax(ax)
@@ -358,14 +441,21 @@ def plot_metric_curve(
         plot_df[y_plot] = _normalize_series(plot_df[y])
 
     hue_arg = hue if hue and hue in plot_df and plot_df[hue].nunique() > 1 else None
+    hue_order = None
+    resolved_palette = palette
+    if hue_arg == "model":
+        plot_df[hue_arg] = format_model_series(plot_df[hue_arg])
+        hue_order = MODEL_DISPLAY_ORDER
+        resolved_palette = palette_for(plot_df[hue_arg], palette=palette)
 
     sns.lineplot(
         data=plot_df,
         x=x_plot,
         y=y_plot,
         hue=hue_arg,
+        hue_order=hue_order,
         linewidth=linewidth,
-        palette=palette,
+        palette=resolved_palette,
         ax=ax,
     )
 
@@ -377,6 +467,9 @@ def plot_metric_curve(
         ax.xaxis.set_major_formatter(mtick.PercentFormatter(x_percent_scale))
     if y_percent_scale is not None:
         ax.yaxis.set_major_formatter(mtick.PercentFormatter(y_percent_scale))
+    legend = ax.get_legend()
+    if hue_arg == "model" and legend is not None:
+        legend.set_title("Model")
     return ax
 
 
@@ -388,28 +481,31 @@ def plot_metric_bars_by_model(
     palette: Mapping[str, str] | None = None,
     normalize_y: bool = False,
     y_percent_scale: float | None = None,
-    x_label: str = "Modelo",
+    x_label: str = "Model",
     y_label: str | None = None,
     title: str | None = None,
 ) -> Axes:
     if df.empty:
-        return _empty_plot(ax, message="Sin datos para graficar.")
+        return _empty_plot(ax, message="No data available to plot.")
 
     _, sns, mtick = _load_plot_modules()
     ax = _resolve_ax(ax)
 
-    plot_df = df.copy().sort_values(y)
+    plot_df = df.copy()
+    plot_df["model"] = format_model_series(plot_df["model"])
     y_plot = y
     if normalize_y:
         y_plot = f"{y}_normalized"
         plot_df[y_plot] = _normalize_series(plot_df[y])
 
-    plot_palette = palette or palette_for(plot_df["model"])
+    plot_palette = palette_for(plot_df["model"], palette=palette)
     sns.barplot(
         data=plot_df,
         x="model",
         y=y_plot,
         hue="model",
+        order=MODEL_DISPLAY_ORDER,
+        hue_order=MODEL_DISPLAY_ORDER,
         dodge=False,
         palette=plot_palette,
         legend=False,
@@ -434,9 +530,9 @@ def plot_key_scope_heatmap(
     sweep_label: str = "step",
     value_col: str = "selected",
     ax: Axes | None = None,
-    cmap: str = "Blues",
+    cmap: Any | None = None,
     x_label: str | None = None,
-    y_label: str = "Llave",
+    y_label: str = "Key scope",
     title: str | None = None,
 ) -> Axes:
     items = ordered_trace_steps(trace_steps, sweep_values=sweep_values)
@@ -451,7 +547,7 @@ def plot_key_scope_heatmap(
         value_col=value_col,
         x_order=[step for step, _ in items],
         ax=ax,
-        cmap=cmap,
+        cmap=cmap or auxiliary_cmap("keys"),
         x_label=x_label or sweep_label,
         y_label=y_label,
         title=title,
@@ -466,9 +562,9 @@ def plot_contact_usage_heatmap(
     sweep_label: str = "step",
     value_col: str = "route_count",
     ax: Axes | None = None,
-    cmap: str = "Blues",
+    cmap: Any | None = None,
     x_label: str | None = None,
-    y_label: str = "Contacto",
+    y_label: str = "Contact",
     title: str | None = None,
 ) -> Axes:
     items = ordered_trace_steps(trace_steps, sweep_values=sweep_values)
@@ -483,7 +579,7 @@ def plot_contact_usage_heatmap(
         value_col=value_col,
         x_order=[step for step, _ in items],
         ax=ax,
-        cmap=cmap,
+        cmap=cmap or auxiliary_cmap("routes"),
         x_label=x_label or sweep_label,
         y_label=y_label,
         title=title,
@@ -498,9 +594,9 @@ def plot_pair_coverage_heatmap(
     sweep_label: str = "step",
     all_pairs: Sequence[tuple[int, int] | str] | None = None,
     ax: Axes | None = None,
-    cmap: str = "Greens",
+    cmap: Any | None = None,
     x_label: str | None = None,
-    y_label: str = "Par",
+    y_label: str = "Pair",
     title: str | None = None,
 ) -> Axes:
     items = ordered_trace_steps(trace_steps, sweep_values=sweep_values)
@@ -516,7 +612,7 @@ def plot_pair_coverage_heatmap(
         value_col="selected",
         x_order=[step for step, _ in items],
         ax=ax,
-        cmap=cmap,
+        cmap=cmap or auxiliary_cmap("pairs"),
         x_label=x_label or sweep_label,
         y_label=y_label,
         title=title,
@@ -533,7 +629,7 @@ def plot_gateway_usage_heatmap(
     sweep_label: str = "step",
     value_col: str = "route_count",
     ax: Axes | None = None,
-    cmap: str = "Purples",
+    cmap: Any | None = None,
     x_label: str | None = None,
     y_label: str = "Gateway",
     title: str | None = None,
@@ -550,7 +646,7 @@ def plot_gateway_usage_heatmap(
         value_col=value_col,
         x_order=[step for step, _ in items],
         ax=ax,
-        cmap=cmap,
+        cmap=cmap or auxiliary_cmap("gateways"),
         x_label=x_label or sweep_label,
         y_label=y_label,
         title=title,
@@ -565,9 +661,9 @@ def plot_network_crossing_heatmap(
     sweep_label: str = "step",
     value_col: str = "crossing_count",
     ax: Axes | None = None,
-    cmap: str = "Reds",
+    cmap: Any | None = None,
     x_label: str | None = None,
-    y_label: str = "Cruce entre redes",
+    y_label: str = "Cross-network crossing",
     title: str | None = None,
 ) -> Axes:
     items = ordered_trace_steps(trace_steps, sweep_values=sweep_values)
@@ -582,7 +678,7 @@ def plot_network_crossing_heatmap(
         value_col=value_col,
         x_order=[step for step, _ in items],
         ax=ax,
-        cmap=cmap,
+        cmap=cmap or auxiliary_cmap("crossings"),
         x_label=x_label or sweep_label,
         y_label=y_label,
         title=title,
@@ -595,7 +691,7 @@ def plot_key_reuse_bar(
     metric: str = "route_count",
     ax: Axes | None = None,
     title: str | None = None,
-    color: str = "#4c78a8",
+    color: str = SECONDARY_COLORS["keys"],
 ) -> Axes:
     data = build_key_reuse_data(trace)
     return _plot_single_trace_bar(
@@ -604,7 +700,7 @@ def plot_key_reuse_bar(
         y_col=metric,
         ax=ax,
         title=title,
-        x_label="Llave",
+        x_label="Key scope",
         y_label=_metric_label(metric),
         color=color,
     )
@@ -616,7 +712,7 @@ def plot_gateway_usage_bar(
     metric: str = "route_count",
     ax: Axes | None = None,
     title: str | None = None,
-    color: str = "#7e57c2",
+    color: str = SECONDARY_COLORS["gateways"],
 ) -> Axes:
     data = build_gateway_usage_data([trace], sweep_values=["selected"])
     data = data.drop(columns=["step"], errors="ignore").sort_values(metric, ascending=False)
@@ -638,7 +734,7 @@ def plot_network_crossing_bar(
     metric: str = "crossing_count",
     ax: Axes | None = None,
     title: str | None = None,
-    color: str = "#e45756",
+    color: str = SECONDARY_COLORS["crossings"],
 ) -> Axes:
     data = build_network_crossing_data([trace], sweep_values=["selected"])
     data = data.drop(columns=["step"], errors="ignore").sort_values(metric, ascending=False)
@@ -648,7 +744,7 @@ def plot_network_crossing_bar(
         y_col=metric,
         ax=ax,
         title=title,
-        x_label="Cruce entre redes",
+        x_label="Cross-network crossing",
         y_label=_metric_label(metric),
         color=color,
     )
@@ -663,7 +759,7 @@ def plot_heatmap_frame(
     ax: Axes | None = None,
     x_order: Sequence[Any] | None = None,
     y_order: Sequence[Any] | None = None,
-    cmap: str = "Blues",
+    cmap: Any = "Blues",
     x_label: str | None = None,
     y_label: str | None = None,
     title: str | None = None,
@@ -671,7 +767,7 @@ def plot_heatmap_frame(
     vmax: float | None = None,
 ) -> Axes:
     if data.empty:
-        return _empty_plot(ax, message="Sin datos para graficar.")
+        return _empty_plot(ax, message="No data available to plot.")
 
     _, sns, _ = _load_plot_modules()
 
@@ -748,7 +844,7 @@ def _plot_single_trace_bar(
     color: str = "#4c78a8",
 ) -> Axes:
     if data.empty:
-        return _empty_plot(ax, message="La solucion no tiene trazas para mostrar.")
+        return _empty_plot(ax, message="The solution has no traces to display.")
 
     _, sns, _ = _load_plot_modules()
     ax = _resolve_ax(ax)
@@ -802,10 +898,10 @@ def _normalize_series(series: pd.Series) -> pd.Series:
 
 def _metric_label(metric: str) -> str:
     return {
-        "route_count": "Cantidad de rutas",
-        "pair_count": "Cantidad de pares",
-        "operation_count": "Cantidad de operaciones",
-        "crossing_count": "Cantidad de cruces",
+        "route_count": "Route count",
+        "pair_count": "Pair count",
+        "operation_count": "Operation count",
+        "crossing_count": "Crossing count",
     }.get(metric, metric)
 
 
@@ -829,10 +925,16 @@ def _load_plot_modules():
 
 
 __all__ = [
+    "MODEL_DISPLAY_ORDER",
     "MODEL_PALETTE",
+    "SECONDARY_COLORS",
     "KEY_TYPE_LABELS",
     "set_plot_theme",
+    "format_model_label",
+    "format_model_series",
     "palette_for",
+    "secondary_palette",
+    "auxiliary_cmap",
     "format_key_scope",
     "format_pair_id",
     "ordered_trace_steps",
