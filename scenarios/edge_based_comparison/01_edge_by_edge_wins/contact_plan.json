@@ -1,5 +1,0 @@
-[
-  {"start": 0, "end": 10, "from": 1, "to": 2, "rate": 1000, "owlt": 1},
-  {"start": 0, "end": 10, "from": 2, "to": 3, "rate": 1000, "owlt": 1},
-  {"start": 0, "end": 10, "from": 3, "to": 4, "rate": 1000, "owlt": 1}
-]
