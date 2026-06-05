@@ -50,7 +50,7 @@ bpsec-keys/
     └── test_int_03_route_catalog.py
 ```
 
-## Pipeline Overview
+## Pipeline
 
 `SimulationPipeline` orchestrates the repository's core workflow:
 
@@ -70,6 +70,27 @@ The pipeline exposes two execution modes:
 `modules.security` contains the reusable security-planning domain model, and
 `models/` contains optimization and plotting utilities built on top of
 `SimulationResult`.
+
+## Installation
+
+The project is currently exercised with Python 3.11+ syntax and has a base
+`requirements.txt` to make local setup reproducible:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+If you also want to run the optimization models under `models/`, install the
+optional Gurobi layer as well:
+
+```bash
+pip install -r requirements-optimization.txt
+```
+
+If your workflow is notebook-first, install your preferred notebook frontend
+(`jupyterlab`, `notebook`, or `ipykernel`) on top of the base requirements.
 
 ## Python Usage
 
@@ -127,13 +148,7 @@ The default is `False`, so directional scopes remain distinct.
 ## Scenarios
 
 The `scenarios/` tree currently contains data files, notebooks, and one plotting
-helper script:
-
-- `scenarios/basic/`
-- `scenarios/edge_based_comparison/`
-- `scenarios/two_planes_polar/`
-- `scenarios/four_planes_polar/`
-- `scenarios/four_planes_polar/plot_temporal_graph.py`
+helper script.
 
 The notebooks are useful as exploratory artifacts, but the most stable and
 well-exercised interface is the Python API used by the test suite.
@@ -153,17 +168,23 @@ These modules depend on `gurobipy` and `pandas`.
 
 ## Dependencies
 
-There is no pinned `requirements.txt` in the repository at the moment, so
-dependencies need to be installed manually in your environment.
+The repository now includes:
 
-Core runtime dependencies used by the current codebase include:
+- `requirements.txt` for the core pipeline, plotting helpers, and temporal
+  graph notebook support
+- `requirements-optimization.txt` for the optimization models in `models/`
+
+The main packages captured there are:
 
 - `pydantic`
 - `matplotlib`
 - `numpy`
 - `teneto`
 - `pandas`
-- `gurobipy`
+
+`gurobipy` is intentionally kept in the optional optimization requirements
+because not every use case needs it and it typically requires a valid Gurobi
+license.
 
 ## Tests
 

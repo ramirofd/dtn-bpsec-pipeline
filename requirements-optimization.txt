@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Optional optimization dependencies for models/ (requires a Gurobi license).
+gurobipy~=13.0
