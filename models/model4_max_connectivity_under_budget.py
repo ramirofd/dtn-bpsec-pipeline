@@ -1,7 +1,7 @@
-from math import ceil
 import gurobipy as gp
 import pandas as pd
 from gurobipy import GRB
+
 from modules.security.models import SecurityModelType
 from models.plot_utils import (
     palette_for,
@@ -24,13 +24,12 @@ def solve_for_security_model(result, security_model: SecurityModelType):
         model=security_model,
     )
 
-    model = gp.Model(f"connectivity_sweep_{security_model.name.lower()}")
+    model = gp.Model(f"budget_connectivity_sweep_{security_model.name.lower()}")
     model.setParam("OutputFlag", 0)
 
     artifacts = attach_route_activation_constraints(model, planning)
 
     pair_ids = [f"{src}->{dst}" for src, dst in result.security.pairs]
-
     pair_vars = {
         pair_id: model.addVar(vtype=GRB.BINARY, name=f"pair[{pair_id}]")
         for pair_id in pair_ids
@@ -50,34 +49,46 @@ def solve_for_security_model(result, security_model: SecurityModelType):
 
     for pair_id, route_ids in routes_by_pair.items():
         model.addConstr(
-            pair_vars[pair_id] <= gp.quicksum(artifacts.route_vars[route_id] for route_id in route_ids),
+            pair_vars[pair_id]
+            <= gp.quicksum(artifacts.route_vars[route_id] for route_id in route_ids),
             name=f"pair_has_route[{pair_id}]",
         )
 
-    connectivity_constr = model.addConstr(
-        gp.quicksum(pair_vars.values()) >= 0,
-        name="min_connectivity_pairs",
+    budget_constr = model.addConstr(
+        gp.quicksum(artifacts.key_vars.values()) <= 0,
+        name="max_active_keys",
     )
 
-    model.setObjective(gp.quicksum(artifacts.key_vars.values()), GRB.MINIMIZE)
+    pair_weight = (
+        len(artifacts.key_vars) * (len(artifacts.route_vars) + 1)
+        + len(artifacts.route_vars)
+        + 1
+    )
+    key_weight = len(artifacts.route_vars) + 1
+    model.setObjective(
+        pair_weight * gp.quicksum(pair_vars.values())
+        - key_weight * gp.quicksum(artifacts.key_vars.values())
+        + gp.quicksum(artifacts.route_vars.values()),
+        GRB.MAXIMIZE,
+    )
 
     sweep_rows = []
     trace_rows = []
 
-    for target_connectivity_pct in range(0, 101, 5):
-        required_pairs = ceil((target_connectivity_pct / 100.0) * len(pair_ids))
-        connectivity_constr.RHS = required_pairs
+    for max_keys in range(len(planning.key_scopes) + 1):
+        budget_constr.RHS = max_keys
         model.optimize()
 
         if model.SolCount == 0:
-            sweep_rows.append({
-                "target_connectivity_pct": target_connectivity_pct,
-                "required_pairs": required_pairs,
-                "selected_pairs": 0,
-                "selected_routes": 0,
-                "selected_keys": 0,
-                "achieved_connectivity_pct": 0.0,
-            })
+            sweep_rows.append(
+                {
+                    "max_keys": max_keys,
+                    "selected_pairs": 0,
+                    "selected_routes": 0,
+                    "selected_keys": 0,
+                    "achieved_connectivity_pct": 0.0,
+                }
+            )
             trace_rows.append(None)
             continue
 
@@ -86,25 +97,24 @@ def solve_for_security_model(result, security_model: SecurityModelType):
             for route_id, var in artifacts.route_vars.items()
             if var.X > 0.5
         }
-
         selected_pairs = sum(
             1 for var in pair_vars.values()
             if var.X > 0.5
         )
-
         selected_keys = sum(
             1 for var in artifacts.key_vars.values()
             if var.X > 0.5
         )
 
-        sweep_rows.append({
-            "target_connectivity_pct": target_connectivity_pct,
-            "required_pairs": required_pairs,
-            "selected_pairs": selected_pairs,
-            "selected_routes": len(selected_route_ids),
-            "selected_keys": selected_keys,
-            "achieved_connectivity_pct": 100.0 * selected_pairs / len(pair_ids),
-        })
+        sweep_rows.append(
+            {
+                "max_keys": max_keys,
+                "selected_pairs": selected_pairs,
+                "selected_routes": len(selected_route_ids),
+                "selected_keys": selected_keys,
+                "achieved_connectivity_pct": 100.0 * selected_pairs / len(pair_ids),
+            }
+        )
         trace_rows.append(
             trace_route_activation_solution(
                 result,
@@ -119,97 +129,97 @@ def solve_for_security_model(result, security_model: SecurityModelType):
     return tuple(trace_rows), new_df
 
 
-def plot_selected_keys_vs_connectivity(
+def plot_connectivity_vs_budget(
     df: pd.DataFrame,
     *,
     ax=None,
-    normalize_y: bool = True,
+    normalize_x: bool = True,
     title: str | None = None,
 ):
-    plot_df = df.sort_values("target_connectivity_pct")
+    plot_df = df.sort_values("max_keys")
     return plot_metric_curve(
         plot_df,
-        x="target_connectivity_pct",
-        y="selected_keys",
+        x="max_keys",
+        y="achieved_connectivity_pct",
         ax=ax,
-        sort_by="target_connectivity_pct",
+        sort_by="max_keys",
         palette=palette_for(plot_df["model"]) if "model" in plot_df else None,
-        normalize_y=normalize_y,
-        x_percent_scale=100,
-        y_percent_scale=1.0 if normalize_y else None,
-        x_label="Conectividad objetivo (%)",
-        y_label="Cantidad minima de llaves activadas" + (" (%)" if normalize_y else ""),
-        title=title or "Llaves minimas vs conectividad objetivo",
+        normalize_x=normalize_x,
+        x_percent_scale=1.0 if normalize_x else None,
+        y_percent_scale=100,
+        x_label="Cantidad de llaves activadas" + (" (%)" if normalize_x else ""),
+        y_label="Conectividad alcanzada (%)",
+        title=title or "Conectividad alcanzada vs llaves activadas",
     )
 
 
-def plot_connectivity_pair_coverage_heatmap(
-    traces_by_connectivity,
+def plot_budget_pair_coverage_heatmap(
+    traces_by_budget,
     *,
     all_pairs=None,
     ax=None,
     title: str | None = None,
 ):
     return plot_pair_coverage_heatmap(
-        traces_by_connectivity,
-        sweep_label="target_connectivity_pct",
+        traces_by_budget,
+        sweep_label="max_keys",
         all_pairs=all_pairs,
         ax=ax,
-        x_label="Conectividad objetivo (%)",
+        x_label="Cantidad de llaves activadas",
         y_label="Par",
-        title=title or "Cobertura de pares por conectividad objetivo",
+        title=title or "Cobertura de pares por presupuesto",
     )
 
 
-def plot_connectivity_key_scope_heatmap(
-    traces_by_connectivity,
+def plot_budget_key_scope_heatmap(
+    traces_by_budget,
     *,
     ax=None,
     value_col: str = "selected",
     title: str | None = None,
 ):
     return plot_key_scope_heatmap(
-        traces_by_connectivity,
-        sweep_label="target_connectivity_pct",
+        traces_by_budget,
+        sweep_label="max_keys",
         value_col=value_col,
         ax=ax,
-        x_label="Conectividad objetivo (%)",
+        x_label="Cantidad de llaves activadas",
         y_label="Llave",
-        title=title or "Activacion de llaves por conectividad objetivo",
+        title=title or "Activacion de llaves por presupuesto",
     )
 
 
-def plot_connectivity_contact_usage_heatmap(
-    traces_by_connectivity,
+def plot_budget_contact_usage_heatmap(
+    traces_by_budget,
     *,
     ax=None,
     value_col: str = "route_count",
     title: str | None = None,
 ):
     return plot_contact_usage_heatmap(
-        traces_by_connectivity,
-        sweep_label="target_connectivity_pct",
+        traces_by_budget,
+        sweep_label="max_keys",
         value_col=value_col,
         ax=ax,
-        x_label="Conectividad objetivo (%)",
+        x_label="Cantidad de llaves activadas",
         y_label="Contacto",
-        title=title or "Uso de contactos por conectividad objetivo",
+        title=title or "Uso de contactos por presupuesto",
     )
 
 
-def plot_connectivity_network_crossing_heatmap(
-    traces_by_connectivity,
+def plot_budget_network_crossing_heatmap(
+    traces_by_budget,
     *,
     ax=None,
     value_col: str = "crossing_count",
     title: str | None = None,
 ):
     return plot_network_crossing_heatmap(
-        traces_by_connectivity,
-        sweep_label="target_connectivity_pct",
+        traces_by_budget,
+        sweep_label="max_keys",
         value_col=value_col,
         ax=ax,
-        x_label="Conectividad objetivo (%)",
+        x_label="Cantidad de llaves activadas",
         y_label="Cruce entre redes",
-        title=title or "Cruces entre redes por conectividad objetivo",
+        title=title or "Cruces entre redes por presupuesto",
     )

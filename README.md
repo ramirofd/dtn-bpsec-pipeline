@@ -1,61 +1,79 @@
 # BPSec Keys
 
-Toolchain experimental para estudiar la relacion entre rutas CGR, dominios de
-red y requerimientos criptograficos BPSec en escenarios DTN.
+Experimental tooling for studying how CGR routes, network domains, and BPSec
+key requirements interact in DTN scenarios.
 
-La superficie publica del proyecto quedo reducida a dos formas de uso:
+The repository currently exposes two main entry points:
 
-- scripts de escenario en `scenarios/examples/...`
-- API Python basada en etapas dentro de `pipelines/`
+- scenario assets under `scenarios/`
+- a stage-based Python API under `pipelines/`
 
-No hay una CLI general ni wrappers legacy de compatibilidad.
-
-## Estructura
+## Repository Layout
 
 ```text
 bpsec-keys/
-├── pipelines/
-│   ├── routing.py
-│   ├── simulation.py
-│   └── route_activation.py
+├── models/
+│   ├── model1_max_routes.py
+│   ├── model2_min_keys.py
+│   ├── model3_min_keys_full_connectivity.py
+│   ├── model4_max_connectivity_under_budget.py
+│   └── plot_utils.py
 ├── modules/
 │   ├── network/
-│   │   ├── topology.py
+│   │   ├── cgr/
 │   │   ├── py_cgr_lib.py
-│   │   └── cgr/
+│   │   └── topology.py
 │   └── security/
-│       ├── __init__.py
 │       ├── annotated_routes.py
 │       ├── artifacts.py
-│       ├── planning.py
 │       ├── keys.py
-│       ├── roles.py
-│       └── models.py
+│       ├── models.py
+│       ├── planning.py
+│       └── roles.py
+├── pipelines/
+│   ├── routing.py
+│   ├── route_activation.py
+│   └── simulation.py
+├── scenarios/
+│   ├── basic/
+│   ├── edge_based_comparison/
+│   ├── four_planes_polar/
+│   └── two_planes_polar/
 └── tests/
-    └── test_security_pipeline.py
-└── scenarios/examples/
-    ├── basic/
-    └── two_planes_polar/
+    ├── test_00_routing_stage.py
+    ├── test_01_annotation_stage.py
+    ├── test_03_route_activation_stage.py
+    ├── test_04_plot_utils.py
+    ├── test_int_00_two_nodes.py
+    ├── test_int_01_three_nodes.py
+    ├── test_int_02_four_nodes.py
+    └── test_int_03_route_catalog.py
 ```
 
-## Pipeline
+## Pipeline Overview
 
-1. `Topology.from_json_file(...)` y `cp_load(...)` cargan topologia y contactos.
-2. `RoutingStage.compute(...)` calcula rutas para todos los pares ordenados.
-3. `RouteAnnotationStage.annotate(...)` agrega `node_path`, `network_path`,
-   gateways y cruces de frontera.
-4. `SecurityPlanningStage.build_batch(...)` genera `ProtectionPlan` por modelo.
-5. `RouteActivationPlanner` y `RouteActivationModelBuilder` agregan la etapa
-   opcional de activacion y optimizacion.
+`SimulationPipeline` orchestrates the repository's core workflow:
 
-`SimulationPipeline.run(...)` orquesta esas etapas de punta a punta.
-`SimulationPipeline.run_loaded(...)` ejecuta la misma orquestacion sobre
-objetos ya cargados en memoria, util para tests y escenarios armados por codigo.
+1. `topology_load(...)` and `cp_load(...)` load topology and contact-plan data.
+2. `RoutingStage.compute(...)` enumerates ordered node pairs and computes routes.
+3. `RouteAnnotationStage.annotate(...)` derives `node_path`, `network_path`,
+   gateway nodes, and boundary crossings for every route.
+4. `SecurityPlanningStage.build_batch(...)` generates `ProtectionPlan`
+   instances for the requested security models.
 
-`modules.security` expone la API publica de la capa de seguridad y concentra
-los modelos concretos, artefactos y helpers de resolucion.
+The pipeline exposes two execution modes:
 
-## Uso desde Python
+- `SimulationPipeline.run(...)` loads JSON files from disk.
+- `SimulationPipeline.run_loaded(...)` operates on already-built in-memory
+  topology and contact-plan objects.
+
+`modules.security` contains the reusable security-planning domain model, and
+`models/` contains optimization and plotting utilities built on top of
+`SimulationResult`.
+
+## Python Usage
+
+### Run from JSON files
 
 ```python
 from modules.security.models import SecurityModelType
@@ -65,8 +83,8 @@ from pipelines.simulation import SimulationPipeline
 pipeline = SimulationPipeline()
 
 result = pipeline.run(
-    cp_path="scenarios/examples/basic/contact_plan.json",
-    topology_path="scenarios/examples/basic/topology.json",
+    cp_path="scenarios/basic/contact_plan.json",
+    topology_path="scenarios/basic/topology.json",
     security_models=(SecurityModelType.EDGE_TO_EDGE,),
     symmetric_keys=False,
     curr_time=0,
@@ -75,9 +93,16 @@ result = pipeline.run(
 )
 ```
 
-Uso en memoria, sin depender de archivos JSON:
+If you pass a custom `routing_algorithm` and omit `num_routes`, the algorithm's
+own configured default applies. Pass `num_routes` only when you want to
+override that limit for a specific run.
+
+### Run from in-memory fixtures
+
+This mirrors how the test suite exercises the pipeline.
 
 ```python
+from modules.security.models import SecurityModelType
 from pipelines.simulation import SimulationPipeline
 from tests.builders import make_contact, make_topology
 
@@ -95,52 +120,84 @@ result = pipeline.run_loaded(
 )
 ```
 
-`symmetric_keys=True` colapsa los scopes `A->B` y `B->A` para llaves
-`NODE_TO_NODE` y `GROUP_TO_GROUP` durante la etapa de activacion/optimizacion.
-Por defecto queda en `False`, asi que las llaves siguen siendo dirigidas.
+When `symmetric_keys=True`, reciprocal `A->B` and `B->A` scopes are normalized
+into the same key requirement for `NODE_TO_NODE` and `GROUP_TO_GROUP` keys.
+The default is `False`, so directional scopes remain distinct.
 
-## Escenarios
+## Scenarios
 
-Scripts principales:
+The `scenarios/` tree currently contains data files, notebooks, and one plotting
+helper script:
 
-- `python scenarios/examples/basic/run.py`
-- `python scenarios/examples/basic/show_node_keys.py`
-- `python scenarios/examples/basic/optimize_route_activation.py`
-- `python scenarios/examples/basic/sweep_route_activation_budget.py`
-- `python scenarios/examples/two_planes_polar/run.py`
-- `python scenarios/examples/two_planes_polar/characterize_routes.py`
-- `python scenarios/examples/two_planes_polar/sweep_budget_connectivity.py`
-- `python scenarios/examples/two_planes_polar/sweep_connectivity_target_keys.py`
+- `scenarios/basic/`
+- `scenarios/edge_based_comparison/`
+- `scenarios/two_planes_polar/`
+- `scenarios/four_planes_polar/`
+- `scenarios/four_planes_polar/plot_temporal_graph.py`
 
-## Dependencias
+The notebooks are useful as exploratory artifacts, but the most stable and
+well-exercised interface is the Python API used by the test suite.
+
+## Optimization Models
+
+The `models/` directory adds optimization layers on top of a
+`SimulationResult`:
+
+- `model1_max_routes.py`: maximize enabled routes under a key budget
+- `model2_min_keys.py`: minimize keys for a target connectivity level
+- `model3_min_keys_full_connectivity.py`: minimize keys for full pair coverage
+- `model4_max_connectivity_under_budget.py`: maximize pair connectivity under a key budget
+- `plot_utils.py`: shared builders and plotting helpers for trace analysis
+
+These modules depend on `gurobipy` and `pandas`.
+
+## Dependencies
+
+There is no pinned `requirements.txt` in the repository at the moment, so
+dependencies need to be installed manually in your environment.
+
+Core runtime dependencies used by the current codebase include:
 
 - `pydantic`
-- `gurobipy`
 - `matplotlib`
+- `numpy`
+- `teneto`
+- `pandas`
+- `gurobipy`
 
-Instalacion:
+## Tests
+
+The current automated coverage is organized around the files below:
+
+- `tests/test_00_routing_stage.py`: ordered-pair enumeration and routing-stage
+  defaults
+- `tests/test_01_annotation_stage.py`: route annotation, gateway detection, and
+  empty-route validation
+- `tests/test_03_route_activation_stage.py`: key-scope deduplication,
+  symmetric-key collapsing, and activation trace reconstruction
+- `tests/test_04_plot_utils.py`: trace-to-dataframe builders and plotting
+  helpers
+- `tests/test_int_00_two_nodes.py`: two-node end-to-end integration scenarios
+- `tests/test_int_01_three_nodes.py`: three-node boundary-crossing scenarios
+- `tests/test_int_02_four_nodes.py`: four-node, multi-network integration
+  scenarios
+- `tests/test_int_03_route_catalog.py`: route-catalog expectations across
+  security models
+
+`tests/test_02_security_stage.py` exists as a scaffold, but its test cases are
+currently commented out.
+
+Run the full suite with:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+python -m unittest discover -s tests
 ```
 
-Tests de regresion:
+Run only the stage-oriented tests with:
 
 ```bash
-python -m unittest tests.test_security_pipeline
-```
-
-Tests por etapa:
-
-- `tests/test_routing_stage.py`: prueba enumeracion de pares, propagacion de metadata y defaults del routing stage.
-- `tests/test_annotation_stage.py`: prueba anotacion de rutas, cruces de frontera y validacion de rutas vacias.
-- `tests/test_security_stage.py`: prueba la generacion de planes por modelo y el caso degenerado intra-network.
-- `tests/test_route_activation_stage.py`: prueba deduplicacion de scopes, prefijos por par y colapso simetrico.
-
-Para ver esos tests con salida mas descriptiva:
-
-```bash
-python -m unittest discover -s tests -p 'test_*stage.py' -v
+python -m unittest tests.test_00_routing_stage \
+  tests.test_01_annotation_stage \
+  tests.test_03_route_activation_stage \
+  tests.test_04_plot_utils -v
 ```

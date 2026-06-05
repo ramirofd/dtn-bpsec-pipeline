@@ -3,9 +3,17 @@ import pandas as pd
 from gurobipy import GRB
 
 from modules.security.models import SecurityModelType
+from models.plot_utils import (
+    palette_for,
+    plot_gateway_usage_bar,
+    plot_key_reuse_bar,
+    plot_metric_bars_by_model,
+    plot_network_crossing_bar,
+)
 from pipelines.route_activation import (
     RouteActivationPlanner,
     attach_route_activation_constraints,
+    trace_route_activation_solution,
 )
 
 
@@ -50,7 +58,7 @@ def solve_for_security_model(result, security_model: SecurityModelType):
             ]
         )
         new_df["model"] = security_model.name
-        return new_df
+        return (None,), new_df
 
     selected_route_ids = {
         route_id
@@ -82,4 +90,93 @@ def solve_for_security_model(result, security_model: SecurityModelType):
     )
     new_df["model"] = security_model.name
 
-    return new_df
+    trace = trace_route_activation_solution(
+        result,
+        artifacts,
+        security_model=security_model,
+    )
+
+    return (trace,), new_df
+
+
+def plot_selected_keys_by_model(
+    df: pd.DataFrame,
+    *,
+    ax=None,
+    normalize: bool = True,
+    title: str | None = None,
+):
+    return plot_metric_bars_by_model(
+        df,
+        y="selected_keys",
+        ax=ax,
+        palette=palette_for(df["model"]) if "model" in df else None,
+        normalize_y=normalize,
+        y_percent_scale=1.0 if normalize else None,
+        y_label="Cantidad minima de llaves" + (" (%)" if normalize else ""),
+        title=title or "Llaves minimas por modelo",
+    )
+
+
+def plot_selected_routes_by_model(
+    df: pd.DataFrame,
+    *,
+    ax=None,
+    normalize: bool = False,
+    title: str | None = None,
+):
+    return plot_metric_bars_by_model(
+        df,
+        y="selected_routes",
+        ax=ax,
+        palette=palette_for(df["model"]) if "model" in df else None,
+        normalize_y=normalize,
+        y_percent_scale=1.0 if normalize else None,
+        y_label="Cantidad de rutas seleccionadas" + (" (%)" if normalize else ""),
+        title=title or "Rutas seleccionadas por modelo",
+    )
+
+
+def plot_full_connectivity_key_reuse(
+    trace,
+    *,
+    metric: str = "route_count",
+    ax=None,
+    title: str | None = None,
+):
+    return plot_key_reuse_bar(
+        trace,
+        metric=metric,
+        ax=ax,
+        title=title or "Reuso de llaves en la solucion optima",
+    )
+
+
+def plot_full_connectivity_gateway_usage(
+    trace,
+    *,
+    metric: str = "route_count",
+    ax=None,
+    title: str | None = None,
+):
+    return plot_gateway_usage_bar(
+        trace,
+        metric=metric,
+        ax=ax,
+        title=title or "Uso de gateways en la solucion optima",
+    )
+
+
+def plot_full_connectivity_network_crossings(
+    trace,
+    *,
+    metric: str = "crossing_count",
+    ax=None,
+    title: str | None = None,
+):
+    return plot_network_crossing_bar(
+        trace,
+        metric=metric,
+        ax=ax,
+        title=title or "Cruces entre redes en la solucion optima",
+    )

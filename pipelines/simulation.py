@@ -69,10 +69,12 @@ class RoutingStage:
         curr_time: int = 0,
         num_routes: int | None = None,
     ) -> RoutingBatchResult:
-        resolved_num_routes = num_routes or self.default_num_routes
+        resolved_default_num_routes = (
+            self.default_num_routes if num_routes is None else num_routes
+        )
         algorithm = ensure_routing_algorithm(
             self.routing_algorithm,
-            default_num_routes=resolved_num_routes,
+            default_num_routes=resolved_default_num_routes,
         )
         pairs = _enumerate_node_pairs(topology)
         routes_by_pair = {
@@ -84,7 +86,7 @@ class RoutingStage:
                         curr_time=curr_time,
                         contact_plan=contact_plan,
                         topology=topology,
-                        num_routes=resolved_num_routes,
+                        num_routes=num_routes,
                     )
                 )
             )
@@ -166,7 +168,7 @@ class SimulationPipeline:
         symmetric_keys: bool = False,
         curr_time: int = 0,
         routing_algorithm: RoutingAlgorithm | None = None,
-        num_routes: int = 3,
+        num_routes: int | None = None,
     ) -> SimulationResult:
         return self.run_loaded(
             topology=topology_load(topology_path),
@@ -187,10 +189,13 @@ class SimulationPipeline:
         symmetric_keys: bool = False,
         curr_time: int = 0,
         routing_algorithm: RoutingAlgorithm | None = None,
-        num_routes: int = 3,
+        num_routes: int | None = None,
     ) -> SimulationResult:
         routing_stage = (
-            RoutingStage(routing_algorithm, default_num_routes=num_routes)
+            RoutingStage(
+                routing_algorithm,
+                default_num_routes=self.routing_stage.default_num_routes,
+            )
             if routing_algorithm is not None
             else self.routing_stage
         )

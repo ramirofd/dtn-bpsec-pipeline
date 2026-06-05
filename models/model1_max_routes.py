@@ -1,10 +1,23 @@
 import gurobipy as gp
 import pandas as pd
 from gurobipy import GRB
-from pipelines.route_activation import RouteActivationPlanner, attach_route_activation_constraints
 from modules.security.models import SecurityModelType
+from models.plot_utils import (
+    palette_for,
+    plot_contact_usage_heatmap,
+    plot_gateway_usage_heatmap,
+    plot_key_scope_heatmap,
+    plot_metric_curve,
+    plot_network_crossing_heatmap,
+)
+from pipelines.route_activation import (
+    RouteActivationPlanner,
+    attach_route_activation_constraints,
+    trace_route_activation_solution,
+)
 
-def solve_for_security_model(result, security_model):
+
+def solve_for_security_model(result, security_model: SecurityModelType):
     planning = RouteActivationPlanner().build_for_model(
         result.security,
         model=security_model,
@@ -23,6 +36,7 @@ def solve_for_security_model(result, security_model):
     model.setObjective(gp.quicksum(artifacts.route_vars.values()), GRB.MAXIMIZE)
 
     sweep_rows = []
+    trace_rows = []
 
     for max_keys in range(len(planning.key_scopes) + 1):
         budget_constr.RHS = max_keys
@@ -36,6 +50,7 @@ def solve_for_security_model(result, security_model):
                 "selected_keys": 0,
                 "connectivity_pct": 0.0,
             })
+            trace_rows.append(None)
             continue
 
         selected_route_ids = {
@@ -61,7 +76,111 @@ def solve_for_security_model(result, security_model):
             "selected_keys": selected_keys,
             "connectivity_pct": 100.0 * len(selected_pairs) / len(result.security.pairs),
         })
+        trace_rows.append(
+            trace_route_activation_solution(
+                result,
+                artifacts,
+                security_model=security_model,
+            )
+        )
     new_df = pd.DataFrame(sweep_rows)
-    new_df['model'] = security_model.name
-    
-    return new_df
+    new_df["model"] = security_model.name
+
+    return tuple(trace_rows), new_df
+
+
+def plot_selected_routes_vs_keys(
+    df: pd.DataFrame,
+    *,
+    ax=None,
+    normalize: bool = False,
+    title: str | None = None,
+):
+    plot_df = df.sort_values("selected_keys")
+    return plot_metric_curve(
+        plot_df,
+        x="selected_keys",
+        y="selected_routes",
+        ax=ax,
+        sort_by="selected_keys",
+        palette=palette_for(plot_df["model"]) if "model" in plot_df else None,
+        normalize_x=normalize,
+        normalize_y=normalize,
+        x_percent_scale=1.0 if normalize else None,
+        y_percent_scale=1.0 if normalize else None,
+        x_label="Cantidad de llaves activadas" + (" (%)" if normalize else ""),
+        y_label="Cantidad de caminos habilitados" + (" (%)" if normalize else ""),
+        title=title or "Caminos habilitados vs llaves activadas",
+    )
+
+
+def plot_budget_key_scope_heatmap(
+    traces_by_budget,
+    *,
+    ax=None,
+    value_col: str = "selected",
+    title: str | None = None,
+):
+    return plot_key_scope_heatmap(
+        traces_by_budget,
+        sweep_label="max_keys",
+        value_col=value_col,
+        ax=ax,
+        x_label="Cantidad de llaves activadas",
+        y_label="Llave",
+        title=title or "Activacion de llaves por presupuesto",
+    )
+
+
+def plot_budget_contact_usage_heatmap(
+    traces_by_budget,
+    *,
+    ax=None,
+    value_col: str = "route_count",
+    title: str | None = None,
+):
+    return plot_contact_usage_heatmap(
+        traces_by_budget,
+        sweep_label="max_keys",
+        value_col=value_col,
+        ax=ax,
+        x_label="Cantidad de llaves activadas",
+        y_label="Contacto",
+        title=title or "Uso de contactos por presupuesto",
+    )
+
+
+def plot_budget_gateway_usage_heatmap(
+    traces_by_budget,
+    *,
+    ax=None,
+    value_col: str = "route_count",
+    title: str | None = None,
+):
+    return plot_gateway_usage_heatmap(
+        traces_by_budget,
+        sweep_label="max_keys",
+        value_col=value_col,
+        ax=ax,
+        x_label="Cantidad de llaves activadas",
+        y_label="Gateway",
+        title=title or "Uso de gateways por presupuesto",
+    )
+
+
+def plot_budget_network_crossing_heatmap(
+    traces_by_budget,
+    *,
+    ax=None,
+    value_col: str = "crossing_count",
+    title: str | None = None,
+):
+    return plot_network_crossing_heatmap(
+        traces_by_budget,
+        sweep_label="max_keys",
+        value_col=value_col,
+        ax=ax,
+        x_label="Cantidad de llaves activadas",
+        y_label="Cruce entre redes",
+        title=title or "Cruces entre redes por presupuesto",
+    )

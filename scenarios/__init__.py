@@ -1,1 +1,1 @@
-"""Concrete scenarios and examples built on top of reusable pipelines."""
+"""Concrete scenarios built on top of reusable pipelines."""

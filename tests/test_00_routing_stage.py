@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from pipelines.routing import RoutingAlgorithm, RoutingRequest
+from pipelines.routing import CGRYenRouting, RoutingAlgorithm, RoutingRequest
 from pipelines.simulation import RoutingStage
 from tests.builders import make_contact, make_route, make_topology
 
@@ -56,8 +56,8 @@ class RoutingStageTests(unittest.TestCase):
             self.assertEqual(request.curr_time, 12)
             self.assertEqual(request.num_routes, 4)
 
-    def test_compute_uses_default_route_limit_when_num_routes_is_omitted(self) -> None:
-        """Proves the stage falls back to its configured default route count."""
+    def test_compute_leaves_route_limit_unset_when_num_routes_is_omitted(self) -> None:
+        """Proves custom routing algorithms can use their own default limit."""
         topology = make_topology({1: (1,), 2: (2,)})
         contact_plan = [make_contact(1, 2)]
         algorithm = RecordingRoutingAlgorithm()
@@ -68,7 +68,43 @@ class RoutingStageTests(unittest.TestCase):
             curr_time=0,
         )
 
-        self.assertEqual([request.num_routes for request in algorithm.requests], [7, 7])
+        self.assertEqual([request.num_routes for request in algorithm.requests], [None, None])
+
+
+class SimulationPipelineRouteLimitTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.topology = make_topology({1: (1, 2, 3, 4)})
+        self.contact_plan = [
+            make_contact(1, 2),
+            make_contact(2, 4),
+            make_contact(1, 3),
+            make_contact(3, 4),
+        ]
+
+    def test_compute_uses_custom_router_limit_when_num_routes_is_omitted(self) -> None:
+        """Proves a custom router's configured limit applies when no override is passed."""
+        result = RoutingStage(
+            routing_algorithm=CGRYenRouting(max_routes=1)
+        ).compute(
+            topology=self.topology,
+            contact_plan=self.contact_plan,
+            curr_time=0,
+        )
+
+        self.assertEqual(len(result.routes_by_pair[(1, 4)]), 1)
+
+    def test_compute_explicit_num_routes_overrides_custom_router_limit(self) -> None:
+        """Proves the per-run override still wins when explicitly requested."""
+        result = RoutingStage(
+            routing_algorithm=CGRYenRouting(max_routes=1)
+        ).compute(
+            topology=self.topology,
+            contact_plan=self.contact_plan,
+            curr_time=0,
+            num_routes=2,
+        )
+
+        self.assertEqual(len(result.routes_by_pair[(1, 4)]), 2)
 
 
 # if __name__ == "__main__":
