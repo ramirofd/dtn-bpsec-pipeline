@@ -14,9 +14,9 @@ The repository is organized around three practical layers:
 ```text
 bpsec-keys/
 ├── docs/
+│   ├── optimization-models.md
 │   └── stage-artifacts.md
 ├── models/
-│   ├── README.md
 │   ├── model1_max_routes.py
 │   ├── model2_min_keys.py
 │   ├── model3_min_keys_full_connectivity.py
@@ -72,7 +72,7 @@ The repository also includes two important downstream helpers:
 ## Documentation Map
 
 - Artifact guide: [`docs/stage-artifacts.md`](docs/stage-artifacts.md)
-- Optimization and plotting guide: [`models/README.md`](models/README.md)
+- Optimization and plotting guide: [`docs/optimization-models.md`](docs/optimization-models.md)
 - Lunar NSE scenario notes: [`scenarios/wisee_nse2_lunar_communication/nse2_files/README.md`](scenarios/wisee_nse2_lunar_communication/nse2_files/README.md)
 
 ## Installation
@@ -194,7 +194,7 @@ The most explanatory optimization artifact is usually `RouteActivationSelection`
 which reconstructs the selected routes, contacts, gateway nodes, and key scopes
 from a solved activation model.
 
-For a detailed walkthrough of that layer, see [`models/README.md`](models/README.md).
+For a detailed walkthrough of that layer, see [`docs/optimization-models.md`](docs/optimization-models.md).
 
 ## Additional Materials
 
