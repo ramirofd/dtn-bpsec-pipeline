@@ -10,6 +10,8 @@ from modules.security.models import KeyType, NodeAction, SecurityModelType, Secu
 
 @dataclass(slots=True, frozen=True)
 class ProtectionOperation:
+    """One concrete protection action applied to a route span or boundary crossing."""
+
     operation_id: str
     model: SecurityModelType
     service: SecurityService
@@ -26,6 +28,8 @@ class ProtectionOperation:
 
 @dataclass(slots=True, frozen=True)
 class NodeSecurityRequirement:
+    """One node-local action implied by a protection operation."""
+
     operation_id: str
     node_id: int
     role: NodeAction
@@ -38,6 +42,8 @@ class NodeSecurityRequirement:
 
 @dataclass(slots=True, frozen=True)
 class ProtectionPlan:
+    """All operations and key requirements needed to protect one annotated route."""
+
     route_id: str
     model: SecurityModelType
     operations: tuple[ProtectionOperation, ...]

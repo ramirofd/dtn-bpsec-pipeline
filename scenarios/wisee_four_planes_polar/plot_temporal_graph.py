@@ -24,29 +24,29 @@ DEFAULT_OUTPUT_PATH = SCENARIO_DIR / "temporal_graph.png"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Dibuja el grafo temporal agrupando nodos por red.")
+    parser = argparse.ArgumentParser(description="Draw the temporal graph grouping nodes by network.")
     parser.add_argument(
         "--contact-plan",
         type=Path,
         default=DEFAULT_CONTACT_PLAN_PATH,
-        help="Ruta al archivo JSON del plan de contactos.",
+        help="Path to the contact-plan JSON file.",
     )
     parser.add_argument(
         "--topology",
         type=Path,
         default=DEFAULT_TOPOLOGY_PATH,
-        help="Ruta al archivo JSON de topologia.",
+        help="Path to the topology JSON file.",
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=None,
-        help="Ruta de salida para la imagen PNG.",
+        help="Output path for the PNG image.",
     )
     parser.add_argument(
         "--title",
         default=None,
-        help="Titulo opcional para el grafico.",
+        help="Optional chart title.",
     )
     return parser.parse_args()
 
@@ -68,8 +68,8 @@ def main() -> None:
         topology=args.topology,
         title=title,
         output_path=output_path,
-        legend_title="Agrupacion por red",
-        network_label_prefix="Red",
+        legend_title="Grouping by network",
+        network_label_prefix="Network",
     )
     plt.close(fig)
 

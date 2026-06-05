@@ -85,7 +85,7 @@ def plot_temporal_graph(
     network = TemporalNetwork()
     network.network_from_array(temporal_array, forcesparse=True)
 
-    fig, ax = plt.subplots(figsize=resolved_figsize)
+    fig, ax = plt.subplots(figsize=resolved_figsize, dpi=dpi)
     network.plot(
         "slice_plot",
         ax=ax,
@@ -99,6 +99,24 @@ def plot_temporal_graph(
         edgekwargs={"alpha": edge_alpha, "linewidth": edge_linewidth, "color": "#2563eb"},
     )
     _style_network_groups(ax, network_entries, color_by_network)
+    ax.set_facecolor("#ffffff")
+    ax.set_axisbelow(True)
+    ax.grid(
+        visible=True,
+        axis="x",
+        color="#cbd5e1",
+        linestyle="--",
+        linewidth=0.8,
+        alpha=0.85,
+    )
+    ax.grid(
+        visible=True,
+        axis="y",
+        color="#e2e8f0",
+        linestyle=":",
+        linewidth=0.6,
+        alpha=0.75,
+    )
     legend_handles = [
         Patch(
             facecolor=color_by_network[entry["id"]],
@@ -290,7 +308,7 @@ def _style_network_groups(
             offset + len(nodes) - 0.5,
             color=color,
             alpha=0.035,
-            zorder=0,
+            zorder=-2,
         )
 
         for node_id in nodes:
@@ -301,4 +319,4 @@ def _style_network_groups(
 
         offset += len(nodes)
         if offset < len(ytick_labels):
-            ax.axhline(offset - 0.5, color="#cbd5e1", linewidth=1.0, linestyle="--", alpha=0.9, zorder=0)
+            ax.axhline(offset - 0.5, color="#cbd5e1", linewidth=1.0, linestyle="--", alpha=0.9, zorder=-1)

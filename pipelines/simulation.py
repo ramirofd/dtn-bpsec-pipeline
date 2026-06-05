@@ -20,6 +20,8 @@ NodePair = tuple[int, int]
 
 @dataclass(slots=True, frozen=True)
 class RoutingBatchResult:
+    """Raw candidate routes computed for every ordered source-destination pair."""
+
     topology: Topology
     contact_plan_size: int
     pairs: tuple[NodePair, ...]
@@ -28,6 +30,8 @@ class RoutingBatchResult:
 
 @dataclass(slots=True, frozen=True)
 class AnnotationBatchResult:
+    """Routing results enriched with topology-aware route annotations."""
+
     topology: Topology
     contact_plan_size: int
     pairs: tuple[NodePair, ...]
@@ -37,6 +41,8 @@ class AnnotationBatchResult:
 
 @dataclass(slots=True, frozen=True)
 class SecurityBatchResult:
+    """Protection plans grouped first by security model and then by ordered pair."""
+
     pairs: tuple[NodePair, ...]
     symmetric_keys: bool
     plans_by_model: dict[SecurityModelType, dict[NodePair, tuple[ProtectionPlan, ...]]]
@@ -44,6 +50,8 @@ class SecurityBatchResult:
 
 @dataclass(slots=True, frozen=True)
 class SimulationResult:
+    """Full pipeline output preserving routing, annotation, and security lineage."""
+
     topology: Topology
     contact_plan_size: int
     routing: RoutingBatchResult

@@ -12,6 +12,8 @@ from modules.security.roles import get_network_role_for_endpoints
 
 @dataclass(slots=True, frozen=True)
 class AnnotatedHop:
+    """One route hop enriched with network membership and endpoint-relative roles."""
+
     hop_index: int
     from_node: int
     to_node: int
@@ -24,6 +26,8 @@ class AnnotatedHop:
 
 @dataclass(slots=True, frozen=True)
 class BoundaryCrossing:
+    """A single hop where the route exits one network and enters another."""
+
     crossing_index: int
     hop_index: int
     exit_node: int
@@ -37,6 +41,8 @@ class BoundaryCrossing:
 
 @dataclass(slots=True, frozen=True)
 class AnnotatedRoute:
+    """A route plus node path, network path, crossings, and gateway metadata."""
+
     route_id: str
     src_node: int
     dst_node: int
