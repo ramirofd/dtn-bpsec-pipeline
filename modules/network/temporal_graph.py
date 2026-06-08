@@ -135,7 +135,8 @@ def plot_temporal_graph(
         borderaxespad=0.4,
     )
     ax.set_title(title or "Temporal Contact Graph", fontsize=title_fontsize, pad=12)
-    ax.set_xlabel(ax.get_xlabel() or "Time", fontsize=label_fontsize + 1)
+    ax.set_xlabel("Time (s)", fontsize=label_fontsize + 1)
+    ax.set_ylabel(ax.get_ylabel() or "Node IDs", fontsize=label_fontsize + 1)
     ax.tick_params(axis="x", labelsize=label_fontsize)
     ax.tick_params(axis="y", labelsize=label_fontsize)
     plt.xticks(rotation=35, ha="right")

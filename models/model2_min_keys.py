@@ -7,6 +7,7 @@ from models.plot_utils import (
     palette_for,
     plot_contact_usage_heatmap,
     plot_key_scope_heatmap,
+    plot_metric_bars_by_model,
     plot_metric_curve,
     plot_network_crossing_heatmap,
     plot_pair_coverage_heatmap,
@@ -23,6 +24,7 @@ def solve_for_security_model(result, security_model: SecurityModelType):
         result.security,
         model=security_model,
     )
+    total_key_scopes = len(planning.key_scopes)
 
     model = gp.Model(f"connectivity_sweep_{security_model.name.lower()}")
     model.setParam("OutputFlag", 0)
@@ -76,6 +78,8 @@ def solve_for_security_model(result, security_model: SecurityModelType):
                 "selected_pairs": 0,
                 "selected_routes": 0,
                 "selected_keys": 0,
+                "total_key_scopes": total_key_scopes,
+                "selected_keys_pct_of_available": 0.0,
                 "achieved_connectivity_pct": 0.0,
             })
             trace_rows.append(None)
@@ -103,6 +107,10 @@ def solve_for_security_model(result, security_model: SecurityModelType):
             "selected_pairs": selected_pairs,
             "selected_routes": len(selected_route_ids),
             "selected_keys": selected_keys,
+            "total_key_scopes": total_key_scopes,
+            "selected_keys_pct_of_available": (
+                100.0 * selected_keys / total_key_scopes if total_key_scopes else 0.0
+            ),
             "achieved_connectivity_pct": 100.0 * selected_pairs / len(pair_ids),
         })
         trace_rows.append(
@@ -141,6 +149,59 @@ def plot_selected_keys_vs_connectivity(
         y_label="Minimum active keys" + (" (%)" if normalize_y else ""),
         title=title or "Minimum keys vs target connectivity",
     )
+
+
+def plot_required_key_percentage_at_connectivity(
+    df: pd.DataFrame,
+    *,
+    target_connectivity_pct: int = 100,
+    ax=None,
+    title: str | None = None,
+):
+    plot_df = df[df["target_connectivity_pct"] == target_connectivity_pct].copy()
+    if plot_df.empty:
+        return plot_metric_bars_by_model(
+            pd.DataFrame(),
+            y="selected_keys_pct_of_available",
+            ax=ax,
+        )
+
+    plot_df["model"] = pd.Categorical(
+        [security_model for security_model in plot_df["model"]],
+        categories=[model.name for model in SecurityModelType],
+        ordered=True,
+    )
+    plot_df = plot_df.sort_values("model")
+    plot_df["model"] = plot_df["model"].astype(str)
+    ax = plot_metric_bars_by_model(
+        plot_df,
+        y="selected_keys_pct_of_available",
+        ax=ax,
+        palette=palette_for(plot_df["model"]) if "model" in plot_df else None,
+        y_percent_scale=100,
+        y_label="Required keys (% of available scopes)",
+        title=title
+        or f"Required keys at {target_connectivity_pct}% connectivity",
+    )
+
+    for text in list(ax.texts):
+        text.remove()
+
+    for bar, row in zip(ax.patches, plot_df.itertuples(index=False), strict=True):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 1.0,
+            (
+                f"{row.selected_keys_pct_of_available:.1f}%\n"
+                f"({int(row.selected_keys)}/{int(row.total_key_scopes)})"
+            ),
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
+
+    ax.set_ylim(0, max(plot_df["selected_keys_pct_of_available"].max() + 8.0, 100.0))
+    return ax
 
 
 def plot_connectivity_pair_coverage_heatmap(
