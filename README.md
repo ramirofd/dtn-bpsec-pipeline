@@ -1,13 +1,13 @@
 # BPSec Keys
 
-Experimental tooling for studying how CGR routes, network domains, and BPSec
-key requirements interact in DTN scenarios.
+Tooling for exploring how CGR route catalogs, network boundaries, and BPSec
+key scopes interact in DTN scenarios.
 
-The repository is organized around three practical layers:
+The repository has three working layers:
 
-- scenario assets under `scenarios/`
-- a stage-based Python API under `pipelines/`
-- optimization and trace-analysis helpers under `models/`
+- `scenarios/` for tracked scenario assets and notebooks
+- `pipelines/` for the stage-based API
+- `models/` for optimization and trace-analysis helpers
 
 ## Repository Layout
 
@@ -41,18 +41,19 @@ bpsec-keys/
 │   ├── routing.py
 │   └── simulation.py
 ├── scenarios/
-│   ├── basic/
-│   ├── wisee_four_planes_polar/
-│   └── wisee_nse2_lunar_communication/
+│   └── wisee_four_planes_polar/
 ├── tests/
-├── WISEE_2026_DTN_Security_Schemes_Optimization/
 ├── requirements.txt
 └── requirements-optimization.txt
 ```
 
+Your working copy may also contain ignored notebooks, figures, or paper
+material. Those local artifacts are not part of the tracked interface
+documented here.
+
 ## Core Workflow
 
-`SimulationPipeline` orchestrates the repository's main workflow:
+`SimulationPipeline` drives the main workflow:
 
 1. `topology_load(...)` and `cp_load(...)` load topology and contact-plan data.
 2. `RoutingStage.compute(...)` enumerates ordered node pairs and computes candidate routes.
@@ -62,23 +63,22 @@ bpsec-keys/
 The pipeline exposes two execution modes:
 
 - `SimulationPipeline.run(...)` loads JSON files from disk
-- `SimulationPipeline.run_loaded(...)` operates on already-built in-memory topology and contact-plan objects
+- `SimulationPipeline.run_loaded(...)` works with already-built in-memory topology and contact-plan objects
 
-The repository also includes two important downstream helpers:
+Two downstream helpers show up often in notebooks and analysis scripts:
 
-- `pipelines.route_activation`: converts security plans into optimization-ready route/key activation artifacts and reconstructs solved selections as `RouteActivationSelection`
-- `modules.network.temporal_graph`: renders temporal contact graphs for notebook and reporting workflows
+- `pipelines.route_activation` turns security plans into optimization-ready route/key activation artifacts and reconstructs solved selections as `RouteActivationSelection`
+- `modules.network.temporal_graph` renders temporal contact graphs for reporting and exploratory analysis
 
 ## Documentation Map
 
 - Artifact guide: [`docs/stage-artifacts.md`](docs/stage-artifacts.md)
 - Optimization and plotting guide: [`docs/optimization-models.md`](docs/optimization-models.md)
-- Lunar NSE scenario notes: [`scenarios/wisee_nse2_lunar_communication/nse2_files/README.md`](scenarios/wisee_nse2_lunar_communication/nse2_files/README.md)
 
 ## Installation
 
-The codebase uses Python 3.11+ syntax and ships with reproducible dependency
-files.
+The project uses Python 3.11+ syntax and ships with version-constrained
+requirements files.
 
 Base environment:
 
@@ -103,11 +103,12 @@ analysis helpers:
 - `pandas`
 - `teneto`
 
-`requirements-optimization.txt` adds `gurobipy` for the optimization models in
-`models/`. That layer typically requires a valid Gurobi license.
+`requirements-optimization.txt` extends that base environment with `gurobipy`
+for the optimization models in `models/`. That layer still requires a valid
+Gurobi license.
 
-If your workflow is notebook-first, install your preferred frontend
-(`jupyterlab`, `notebook`, or `ipykernel`) on top of the base environment.
+If your workflow is notebook-first, add your preferred frontend on top of the
+base environment, such as `jupyterlab`, `notebook`, or `ipykernel`.
 
 ## Python Usage
 
@@ -121,19 +122,17 @@ from pipelines.simulation import SimulationPipeline
 pipeline = SimulationPipeline()
 
 result = pipeline.run(
-    cp_path="scenarios/basic/contact_plan.json",
-    topology_path="scenarios/basic/topology.json",
+    cp_path="scenarios/wisee_four_planes_polar/contact_plan.json",
+    topology_path="scenarios/wisee_four_planes_polar/topology.json",
     security_models=(SecurityModelType.EDGE_TO_EDGE,),
-    symmetric_keys=False,
     curr_time=0,
     routing_algorithm=CGRYenRouting(max_routes=3),
-    num_routes=3,
 )
 ```
 
 If you pass a custom `routing_algorithm` and omit `num_routes`, the algorithm's
 own configured default applies. Pass `num_routes` only when you want to
-override that limit for a specific run.
+override that limit for one specific run.
 
 ### Run from In-Memory Fixtures
 
@@ -158,24 +157,21 @@ result = pipeline.run_loaded(
 )
 ```
 
-When `symmetric_keys=True`, reciprocal `A->B` and `B->A` scopes are normalized
-into the same key requirement for `NODE_TO_NODE` and `GROUP_TO_GROUP` keys.
-The default is `False`, so directional scopes remain distinct.
+When `symmetric_keys=True`, the flag is preserved in
+`result.security.symmetric_keys` and used by route-activation and optimization
+helpers to normalize reciprocal `A->B` and `B->A` scopes for
+`NODE_TO_NODE` and `GROUP_TO_GROUP` keys. The raw `plan.key_requirements`
+inside `result.security.plans_by_model` remain directional.
 
 ## Scenario Assets
 
-The `scenarios/` tree contains the datasets and exploratory notebooks used to
-exercise the API.
+The tracked repository currently includes one scenario package:
 
-- `scenarios/basic/`
-  Minimal topology/contact-plan JSON plus `resultados.ipynb` and its rendered HTML export.
 - `scenarios/wisee_four_planes_polar/`
-  Polar-orbit scenario assets, two contact-plan variants, a notebook, and a dedicated temporal-graph script.
-- `scenarios/wisee_nse2_lunar_communication/`
-  Lunar scenario notebook, alternate topology files, a scenario image, and `nse2_files/` with Docker/NSE testbed material.
+  Topology JSON, two contact-plan variants, one notebook, and a dedicated temporal-graph script.
 
-The notebooks are useful exploratory companions, but the most stable interface
-in the repository is the Python API exercised by the tests.
+The notebooks are useful companions for exploration, but the most stable
+interface in the repository is still the Python API exercised by the tests.
 
 ## Optimization Layer
 
@@ -190,23 +186,19 @@ Main modules:
 - `model4_max_connectivity_under_budget.py`: maximize ordered-pair connectivity under a key budget
 - `plot_utils.py`: shared dataframe builders and plotting helpers for solved traces
 
-The most explanatory optimization artifact is usually `RouteActivationSelection`,
-which reconstructs the selected routes, contacts, gateway nodes, and key scopes
-from a solved activation model.
+The most explanatory optimization artifact is usually
+`RouteActivationSelection`, which reconstructs the selected routes, contacts,
+gateway nodes, and key scopes from a solved activation model.
 
-For a detailed walkthrough of that layer, see [`docs/optimization-models.md`](docs/optimization-models.md).
-
-## Additional Materials
-
-- `WISEE_2026_DTN_Security_Schemes_Optimization/` contains the paper draft and supporting figures for the WISEE 2026 workflow.
+For a detailed walkthrough of that layer, see
+[`docs/optimization-models.md`](docs/optimization-models.md).
 
 ## Tests
 
-The automated suite currently covers:
+The executed suite currently covers:
 
 - `tests/test_00_routing_stage.py`: ordered-pair enumeration and routing-stage defaults
 - `tests/test_01_annotation_stage.py`: route annotation, boundary detection, and empty-route validation
-- `tests/test_02_security_stage.py`: scaffold for dedicated security-stage tests; test bodies are currently commented out
 - `tests/test_03_route_activation_stage.py`: route/key activation planning and solved-trace reconstruction
 - `tests/test_04_plot_utils.py`: dataframe builders derived from `RouteActivationSelection`
 - `tests/test_05_temporal_graph.py`: temporal graph plotting helper
@@ -214,6 +206,9 @@ The automated suite currently covers:
 - `tests/test_int_01_three_nodes.py`: three-node boundary-crossing scenarios
 - `tests/test_int_02_four_nodes.py`: four-node, multi-network integration scenarios
 - `tests/test_int_03_route_catalog.py`: route-catalog expectations across security models
+
+There is also a scaffold at `tests/test_02_security_stage.py`, but its test
+bodies are currently commented out and it is not part of the executed suite.
 
 Run the full suite with:
 

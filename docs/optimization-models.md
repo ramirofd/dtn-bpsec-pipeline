@@ -1,12 +1,15 @@
 # Optimization Models Guide
 
-This guide documents the optimization layer built on top of
-`SimulationResult`, with special attention to:
+The optimization layer sits one step downstream from `SimulationPipeline`.
+You run the pipeline first, then ask one of the model modules in `models/`
+to trade off route activation against key usage.
+
+This guide focuses on:
 
 - what each optimization model solves
 - what each solver returns
-- how to interpret `RouteActivationSelection`
-- which plotting helpers exist today in the repository
+- how to read `RouteActivationSelection`
+- which plotting helpers already exist in the repository
 
 ## Where This Layer Fits
 
@@ -31,6 +34,8 @@ The relevant source files are:
 - `models/plot_utils.py`
 - `pipelines/route_activation.py`
 
+All four models rely on `gurobipy`.
+
 ## Input Contract
 
 All four optimization models receive:
@@ -53,12 +58,11 @@ from pipelines.simulation import SimulationPipeline
 pipeline = SimulationPipeline()
 
 result = pipeline.run(
-    cp_path="scenarios/basic/contact_plan.json",
-    topology_path="scenarios/basic/topology.json",
+    cp_path="scenarios/wisee_four_planes_polar/contact_plan.json",
+    topology_path="scenarios/wisee_four_planes_polar/topology.json",
     security_models=tuple(SecurityModelType),
     curr_time=0,
     routing_algorithm=CGRYenRouting(max_routes=3),
-    num_routes=3,
 )
 ```
 
@@ -75,12 +79,12 @@ All `solve_for_security_model(...)` functions return:
 
 Where:
 
-- `df` is a sweep summary `DataFrame`
+- `df` is a summary `DataFrame`
 - `traces` is a tuple aligned row by row with `df`
 - if a sweep point has no feasible solution, the matching `trace` entry is `None`
 
-This makes it possible to move from an aggregate curve back to the exact
-selected routes and keys that produced one point in the curve.
+That makes it easy to move from an aggregate curve back to the exact selected
+routes and keys that produced a given point.
 
 ## What a Trace Represents
 
@@ -189,6 +193,8 @@ Summary columns:
 - `selected_pairs`
 - `selected_routes`
 - `selected_keys`
+- `total_key_scopes`
+- `selected_keys_pct_of_available`
 - `achieved_connectivity_pct`
 - `model`
 
@@ -208,7 +214,9 @@ traces_m2 = {}
 
 for sec_model in SecurityModelType:
     sec_traces, sec_df = solve_for_security_model(result, sec_model)
-    traces_m2[sec_model.name] = dict(zip(sec_df["target_connectivity_pct"], sec_traces))
+    traces_m2[sec_model.name] = dict(
+        zip(sec_df["target_connectivity_pct"], sec_traces)
+    )
     df_m2 = pd.concat([df_m2, sec_df], ignore_index=True)
 ```
 
@@ -297,7 +305,8 @@ for sec_model in SecurityModelType:
 ## Plotting Helpers
 
 `models/plot_utils.py` provides the shared plotting and dataframe-building
-layer. Model files then expose thin wrappers for the most common views.
+layer. The model files then expose thin wrappers for the views that come up
+most often.
 
 ### Shared Setup
 
@@ -363,6 +372,7 @@ Note:
 ### Model 2 Wrappers
 
 - `plot_selected_keys_vs_connectivity(df, normalize_y=True, ...)`
+- `plot_required_key_percentage_at_connectivity(df, target_connectivity_pct=100, ...)`
 - `plot_connectivity_pair_coverage_heatmap(traces_by_connectivity, all_pairs=..., ...)`
 - `plot_connectivity_key_scope_heatmap(traces_by_connectivity, ...)`
 - `plot_connectivity_contact_usage_heatmap(traces_by_connectivity, ...)`
@@ -373,16 +383,16 @@ Example:
 ```python
 from models.model2_min_keys import (
     plot_connectivity_pair_coverage_heatmap,
-    plot_connectivity_key_scope_heatmap,
+    plot_required_key_percentage_at_connectivity,
     plot_selected_keys_vs_connectivity,
 )
 
 plot_selected_keys_vs_connectivity(df_m2)
+plot_required_key_percentage_at_connectivity(df_m2, target_connectivity_pct=100)
 plot_connectivity_pair_coverage_heatmap(
     traces_m2["EDGE_TO_EDGE"],
     all_pairs=result.security.pairs,
 )
-plot_connectivity_key_scope_heatmap(traces_m2["EDGE_TO_EDGE"])
 ```
 
 Note:
@@ -439,35 +449,6 @@ plot_connectivity_vs_budget(df_m4)
 plot_budget_pair_coverage_heatmap(
     traces_m4["EDGE_TO_EDGE"],
     all_pairs=result.security.pairs,
-)
-```
-
-## Recommended Notebook Pattern
-
-1. Run `SimulationPipeline`.
-2. Build security plans for the security models you want to compare.
-3. Solve the optimization model for each `SecurityModelType`.
-4. Keep the summary dataframes (`df_m1`, `df_m2`, `df_m3`, `df_m4`) separate from the trace maps.
-5. Use model-specific wrappers first.
-6. Drop to `models.plot_utils` when you need a custom analysis or export.
-
-## When to Use `plot_utils.py` Directly
-
-Use it directly when you want to:
-
-- compare different scenarios with the same type of heatmap
-- export trace-derived tables for a paper or spreadsheet
-- build a visualization that is not already wrapped by one model module
-- inspect one selected solution without re-reading the raw optimization model
-
-Example:
-
-```python
-from models.plot_utils import build_contact_usage_data
-
-contact_df = build_contact_usage_data(
-    traces_m1["EDGE_TO_EDGE"],
-    sweep_label="max_keys",
 )
 ```
 

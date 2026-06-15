@@ -1,8 +1,7 @@
 # Stage Artifacts Guide
 
-This document explains what each pipeline stage produces, how the results are
-indexed, and what kinds of derived information you can compute from them
-without reopening the implementation.
+This guide is a practical map of what each pipeline stage returns and how the
+pieces line up once you start exploring results in notebooks or scripts.
 
 ## Pipeline Lineage
 
@@ -45,8 +44,8 @@ All batch-level stage results are indexed by ordered node pair:
 - `routes_by_pair`, `annotated_routes_by_pair`, and `plans_by_model[model]`
   all use the same pair keys
 
-That alignment is intentional: you can move from raw routes, to annotated
-routes, to protection plans for the same pair without recomputing joins.
+That alignment is deliberate. You can move from raw routes, to annotated
+routes, to protection plans for the same pair without rebuilding joins by hand.
 
 ## Stage 1: Routing
 
@@ -128,10 +127,7 @@ The batch still carries:
 - `pairs`
 - `routes_by_pair`
 
-That means this stage is the first artifact that is both:
-
-- route-aware
-- network-aware
+This is the first artifact that is both route-aware and network-aware.
 
 ### Unit Artifact
 
@@ -215,7 +211,8 @@ Produced by `SecurityPlanningStage.build_batch(...)`.
 `SecurityBatchResult` contains:
 
 - `pairs`: the same ordered pair list used by earlier stages
-- `symmetric_keys`: whether reciprocal scopes should be normalized together
+- `symmetric_keys`: a flag carried into downstream route-activation and
+  optimization helpers when reciprocal scopes should be normalized together
 - `plans_by_model`: protection plans grouped by security model and by pair
 
 The access pattern is:
@@ -223,6 +220,11 @@ The access pattern is:
 ```python
 plans = result.security.plans_by_model[security_model][pair]
 ```
+
+One subtle but important detail: `symmetric_keys` does not rewrite the
+`ProtectionPlan` objects inside `plans_by_model`. Those plans keep the raw
+directional requirements produced by the security model. Scope normalization
+happens later in the route-activation layer when requested.
 
 ### Unit Artifact
 
@@ -272,15 +274,30 @@ Each `KeyRequirement` tells you which scoped key is needed:
 - `local_node`
 - `rationale`
 
-You can recover the normalized scope through:
+`requirement.scope` returns the raw scope attached to that operation:
 
 ```python
 requirement.scope
 ```
 
+If you want the same symmetric view used by route activation and optimization,
+normalize that scope explicitly:
+
+```python
+from modules.security.keys import normalize_key_scope
+
+normalized_scope = normalize_key_scope(
+    requirement.scope,
+    symmetric=result.security.symmetric_keys,
+)
+```
+
+For `NODE_TO_NODE` and `GROUP_TO_GROUP`, that can merge reciprocal `A->B` and
+`B->A` scopes into one normalized requirement.
+
 ### What You Can Compute From Security Plans
 
-Distinct key scopes required by one security model:
+Distinct raw key scopes required by one security model:
 
 ```python
 from modules.security.models import SecurityModelType
@@ -289,6 +306,22 @@ model = SecurityModelType.EDGE_TO_EDGE
 
 distinct_scopes = {
     requirement.scope
+    for plans in result.security.plans_by_model[model].values()
+    for plan in plans
+    for requirement in plan.key_requirements
+}
+```
+
+Distinct normalized scopes, using the same rule as the optimization helpers:
+
+```python
+from modules.security.keys import normalize_key_scope
+
+normalized_scopes = {
+    normalize_key_scope(
+        requirement.scope,
+        symmetric=result.security.symmetric_keys,
+    )
     for plans in result.security.plans_by_model[model].values()
     for plan in plans
     for requirement in plan.key_requirements
@@ -356,7 +389,7 @@ for raw_route, annotated_route, plan in zip(raw_routes, annotated_routes, plans)
     print([requirement.scope for requirement in plan.key_requirements])
 ```
 
-This is the recommended way to explain one route end to end:
+That is usually the cleanest way to explain one route end to end:
 
 1. show the raw contacts chosen by routing
 2. show how the route traverses nodes and networks
@@ -391,14 +424,3 @@ analysis-friendly tables:
 - `build_gateway_usage_data(...)`
 - `build_network_crossing_data(...)`
 - `build_key_reuse_data(trace)`
-
-## Recommended Documentation Pattern
-
-For every new stage or downstream analysis artifact, document three levels:
-
-1. Batch container: how results are indexed and how to access them.
-2. Unit artifact: what one element means semantically.
-3. Derived queries: two or three copy-paste examples of metrics a reader can compute.
-
-That format keeps the documentation close to how people actually explore the
-results in notebooks and scripts.
