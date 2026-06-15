@@ -457,7 +457,8 @@ def plot_metric_curve(
         linewidth=linewidth,
         palette=resolved_palette,
         ax=ax,
-        marker='o'
+        marker='o',
+        estimator="mean", errorbar="sd"
     )
 
     ax.set_xlabel(x_label or x)

@@ -40,4 +40,6 @@ dist/
 *.html
 *.png
 
-WISEE_2026_DTN_Security_Schemes_Optimization/
+new_WISEE_2026_DTN_Security_Schemes_Optimization/
+
+.matplotlib-cache/
