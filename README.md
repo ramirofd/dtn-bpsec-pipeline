@@ -41,6 +41,8 @@ bpsec-keys/
 │   ├── routing.py
 │   └── simulation.py
 ├── scenarios/
+│   ├── basic/
+│   ├── nse2_lunar_communication/
 │   └── wisee_four_planes_polar/
 ├── tests/
 ├── requirements.txt
@@ -74,6 +76,7 @@ Two downstream helpers show up often in notebooks and analysis scripts:
 
 - Artifact guide: [`docs/stage-artifacts.md`](docs/stage-artifacts.md)
 - Optimization and plotting guide: [`docs/optimization-models.md`](docs/optimization-models.md)
+- Lunar NSE scenario notes: [`scenarios/nse2_lunar_communication/nse2_files/README.md`](scenarios/nse2_lunar_communication/nse2_files/README.md)
 
 ## Installation
 
@@ -165,8 +168,13 @@ inside `result.security.plans_by_model` remain directional.
 
 ## Scenario Assets
 
-The tracked repository currently includes one scenario package:
+The tracked repository currently includes three scenario packages:
 
+- `scenarios/basic/`
+  Minimal topology/contact-plan JSON plus the `resultados.ipynb` notebook.
+- `scenarios/nse2_lunar_communication/`
+  Lunar scenario notebook, alternate topology files, a scenario image, and
+  `nse2_files/` with Docker/NSE testbed material.
 - `scenarios/wisee_four_planes_polar/`
   Topology JSON, two contact-plan variants, one notebook, and a dedicated temporal-graph script.
 
