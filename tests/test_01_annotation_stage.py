@@ -1,62 +1,69 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import unittest
 
-from modules.security.annotated_routes import annotate_route
+from modules.domain import RouteCandidate, RouteRef
+from pipelines.catalogs import AnnotationCatalog, RouteCatalog
 from pipelines.simulation import RouteAnnotationStage
-from tests.builders import make_contact, make_route, make_routing_batch_result, make_topology
+from tests.builders import make_contact, make_route, make_route_catalog, make_topology
 
 
 class RouteAnnotationStageTests(unittest.TestCase):
-    def test_annotate_marks_boundary_crossings_and_gateway_nodes(self) -> None:
-        """Proves annotation derives node paths, network crossings, and gateway nodes."""
+    def setUp(self):
         topology = make_topology({1: (1, 2), 2: (3, 4), 3: (5,)})
-        route = make_route(
-            (
-                make_contact(1, 2),
-                make_contact(2, 3),
-                make_contact(3, 4),
-                make_contact(4, 5),
-            )
-        )
-        routing = make_routing_batch_result(
-            topology=topology,
-            pairs=((1, 5),),
-            routes_by_pair={(1, 5): (route,)},
-            contact_plan_size=9,
-        )
+        route = make_route((make_contact(1, 2), make_contact(2, 3), make_contact(3, 4), make_contact(4, 5)))
+        self.routes = make_route_catalog(topology=topology, pairs=((1, 5), (5, 1)), routes_by_pair={(1, 5): (route,)})
+        self.ref = RouteRef((1, 5), 1)
 
-        result = RouteAnnotationStage().annotate(routing)
-        annotated = result.annotated_routes_by_pair[(1, 5)][0]
-
-        self.assertEqual(result.pairs, ((1, 5),))
-        self.assertEqual(result.contact_plan_size, 9)
-        self.assertEqual(annotated.route_id, "route-1")
+    def test_marks_boundary_crossings_and_gateway_nodes(self) -> None:
+        result = RouteAnnotationStage().annotate(self.routes)
+        annotated = result.by_route[self.ref]
+        self.assertIs(result.routes, self.routes)
+        self.assertEqual(annotated.ref, self.ref)
         self.assertEqual(annotated.node_path, (1, 2, 3, 4, 5))
         self.assertEqual(annotated.network_path, (1, 1, 2, 2, 3))
-        self.assertEqual(len(annotated.boundary_crossings), 2)
-        self.assertEqual(
-            tuple((crossing.exit_node, crossing.entrance_node) for crossing in annotated.boundary_crossings),
-            ((2, 3), (4, 5)),
-        )
+        self.assertEqual(tuple((c.exit_node, c.entrance_node) for c in annotated.boundary_crossings), ((2, 3), (4, 5)))
         self.assertEqual(annotated.gateway_nodes, frozenset({2, 3, 4, 5}))
+        self.assertEqual(result.routes.routes_by_pair[(5, 1)], ())
 
-    def test_annotate_route_rejects_empty_routes(self) -> None:
-        """Proves the low-level annotator rejects routes without hops."""
-        topology = make_topology({1: (1,), 2: (2,)})
+    def test_identity_remains_correct_after_catalog_reordering(self) -> None:
+        first = self.routes.by_id[self.ref]
+        second_ref = RouteRef((1, 5), 2)
+        second = replace(first, ref=second_ref)
+        catalog = RouteCatalog(self.routes.scenario, {second_ref: second, self.ref: first})
+        annotations = RouteAnnotationStage().annotate(catalog)
+        self.assertEqual(catalog.routes_by_pair[(1, 5)], (self.ref, second_ref))
+        self.assertEqual(annotations.by_route[self.ref].ref, self.ref)
+        self.assertEqual(annotations.by_route[second_ref].ref, second_ref)
 
-        class EmptyRoute:
-            def get_hops(self):
-                return []
+    def test_missing_annotation_and_mismatched_identity_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, 'exactly'):
+            AnnotationCatalog(self.routes, {})
+        annotation = RouteAnnotationStage().annotate(self.routes).by_route[self.ref]
+        with self.assertRaisesRegex(ValueError, 'reference'):
+            AnnotationCatalog(self.routes, {self.ref: replace(annotation, ref=RouteRef((1, 5), 2))})
+        with self.assertRaisesRegex(ValueError, 'reference'):
+            RouteCatalog(self.routes.scenario, {RouteRef((1, 5), 2): self.routes.by_id[self.ref]})
 
-        with self.assertRaisesRegex(ValueError, "route must contain at least one hop"):
-            annotate_route(
-                EmptyRoute(),
-                topology,
-                source_node=1,
-                destination_node=2,
-            )
+    def test_empty_or_disconnected_route_is_rejected_at_domain_boundary(self) -> None:
+        with self.assertRaisesRegex(ValueError, 'at least one hop'):
+            RouteCandidate(self.ref, (), 0, 0, 1)
+        contacts = self.routes.by_id[self.ref].contacts
+        with self.assertRaisesRegex(ValueError, 'continuous'):
+            RouteCandidate(self.ref, (contacts[0], contacts[-1]), 0, 0, 1)
 
+    def test_catalog_copies_mapping_before_exposing_it(self) -> None:
+        by_id = dict(self.routes.by_id)
+        catalog = RouteCatalog(self.routes.scenario, by_id)
+        by_id.clear()
+        self.assertEqual(len(catalog.by_id), 1)
+        result = RouteAnnotationStage().annotate(catalog)
+        with self.assertRaises(TypeError):
+            result.by_route[self.ref] = None
 
-# if __name__ == "__main__":
-#     unittest.main(verbosity=2)
+    def test_injected_annotation_must_preserve_hop_indices(self) -> None:
+        annotation = RouteAnnotationStage().annotate(self.routes).by_route[self.ref]
+        corrupt_hops = (replace(annotation.hops[0], hop_index=3), *annotation.hops[1:])
+        with self.assertRaisesRegex(ValueError, "indices and endpoints"):
+            AnnotationCatalog(self.routes, {self.ref: replace(annotation, hops=corrupt_hops)})

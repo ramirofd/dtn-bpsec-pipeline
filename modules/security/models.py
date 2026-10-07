@@ -69,11 +69,12 @@ class SecurityModel(ABC):
         return self.type.name.lower()
 
     @abstractmethod
-    def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
+    def build_plan(self, annotated_route: AnnotatedRoute, *, policy_id: str | None = None) -> ProtectionPlan:
         raise NotImplementedError
 
     def build_plans(
         self,
         annotated_routes: tuple[AnnotatedRoute, ...] | list[AnnotatedRoute],
+        *, policy_id: str | None = None,
     ) -> tuple[ProtectionPlan, ...]:
-        return tuple(self.build_plan(route) for route in annotated_routes)
+        return tuple(self.build_plan(route, policy_id=policy_id) for route in annotated_routes)

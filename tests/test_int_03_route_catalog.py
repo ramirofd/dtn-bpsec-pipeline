@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import unittest
 
+from modules.domain import PlanRef, RouteRef
 from modules.security.models import KeyType, SecurityModelType
 from pipelines.routing import RoutingAlgorithm, RoutingRequest
-from pipelines.simulation import SimulationPipeline
-from tests.builders import make_contact, make_route, make_topology
+from pipelines.simulation import RoutingStage, SimulationPipeline
+from pipelines.routing import RoutingBatchRequest
+from tests.builders import make_contact, make_route, make_topology, make_scenario
 
 
 class FixedPairRoutingAlgorithm(RoutingAlgorithm):
@@ -83,9 +85,6 @@ def build_pipeline_input(route_names: tuple[str, ...]) -> tuple[dict[str, object
             "topology": TOPOLOGY,
             "contact_plan": build_contact_plan(),
             "routing_algorithm": FixedPairRoutingAlgorithm(routes_by_pair),
-            "security_models": tuple(SecurityModelType),
-            "curr_time": 0,
-            "num_routes": 1,
         },
         route_specs,
     )
@@ -245,7 +244,7 @@ class RouteCatalogIntegrationTests(unittest.TestCase):
     ) -> None:
         for route_name in route_names:
             pair = route_specs[route_name]["pair"]
-            annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+            annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
             self.assertEqual(
                 annotated_route.node_path,
                 route_specs[route_name]["node_path"],
@@ -254,7 +253,7 @@ class RouteCatalogIntegrationTests(unittest.TestCase):
 
             for model, expected_scopes in EXPECTED_KEY_SCOPES_BY_ROUTE[route_name].items():
                 with self.subTest(route=route_name, model=model.name):
-                    plan = result.security.plans_by_model[model][pair][0]
+                    plan = result.protection.by_plan[PlanRef(RouteRef(pair, 1), model.name)]
                     actual_scopes = tuple(
                         (
                             requirement.key_type,
@@ -269,7 +268,9 @@ class RouteCatalogIntegrationTests(unittest.TestCase):
         """Guide test: compare the first four catalog routes against the provided key spec."""
         route_names = ("R1", "R2", "R3", "R4")
         pipeline_input, route_specs = build_pipeline_input(route_names)
-        result = SimulationPipeline().run_loaded(**pipeline_input)
+        result = SimulationPipeline(routing=RoutingStage(pipeline_input["routing_algorithm"])).run(
+            RoutingBatchRequest(make_scenario(pipeline_input["topology"], pipeline_input["contact_plan"]), num_routes=1)
+        )
 
         self.assert_route_expectations(
             result,
@@ -281,7 +282,9 @@ class RouteCatalogIntegrationTests(unittest.TestCase):
         """Guide test: compare the full six-route catalog against the provided key spec."""
         route_names = ("R1", "R2", "R3", "R4", "R5", "R6")
         pipeline_input, route_specs = build_pipeline_input(route_names)
-        result = SimulationPipeline().run_loaded(**pipeline_input)
+        result = SimulationPipeline(routing=RoutingStage(pipeline_input["routing_algorithm"])).run(
+            RoutingBatchRequest(make_scenario(pipeline_input["topology"], pipeline_input["contact_plan"]), num_routes=1)
+        )
 
         self.assert_route_expectations(
             result,

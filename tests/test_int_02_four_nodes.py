@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import unittest
 
+from modules.domain import PlanRef, RouteRef
 from modules.security.models import KeyType, SecurityModelType
 from pipelines.routing import RoutingAlgorithm, RoutingRequest
-from pipelines.simulation import SimulationPipeline
-from tests.builders import make_contact, make_route, make_topology
+from pipelines.simulation import RoutingStage, SimulationPipeline
+from pipelines.routing import RoutingBatchRequest
+from tests.builders import make_contact, make_route, make_topology, make_scenario
 
 
 class FixedPairRoutingAlgorithm(RoutingAlgorithm):
@@ -75,13 +77,11 @@ def build_four_nodes_foreign_segment_then_exit() -> dict[str, object]:
 class FourNodesIntegrationTests(unittest.TestCase):
     def run_guided_pipeline(self, scenario: dict[str, object]):
         route = make_route(scenario["contact_plan"])
-        return SimulationPipeline().run_loaded(
-            **scenario,
-            security_models=tuple(SecurityModelType),
-            curr_time=0,
-            num_routes=1,
-            routing_algorithm=FixedPairRoutingAlgorithm({(1, 4): (route,)}),
-        )
+        return SimulationPipeline(
+            routing=RoutingStage(FixedPairRoutingAlgorithm({(1, 4): (route,)}))
+        ).run(RoutingBatchRequest(
+            make_scenario(scenario["topology"], scenario["contact_plan"]), num_routes=1,
+        ))
 
     def assert_key_requirements_by_model(
         self,
@@ -92,7 +92,7 @@ class FourNodesIntegrationTests(unittest.TestCase):
     ) -> None:
         for model, expected_requirements in expected_by_model.items():
             with self.subTest(model=model.name):
-                plan = result.security.plans_by_model[model][pair][0]
+                plan = result.protection.by_plan[PlanRef(RouteRef(pair, 1), model.name)]
                 actual_requirements = tuple(
                     (
                         requirement.key_type,
@@ -108,7 +108,7 @@ class FourNodesIntegrationTests(unittest.TestCase):
         """Spec: a single-network four-hop route collapses edge-based keys to N1-N4."""
         pair = (1, 4)
         result = self.run_guided_pipeline(build_four_nodes_same_network())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.network_path, (1, 1, 1, 1))
         self.assertEqual(annotated_route.boundary_crossings, ())
@@ -137,7 +137,7 @@ class FourNodesIntegrationTests(unittest.TestCase):
         """Spec: one boundary plus a destination-local segment."""
         pair = (1, 4)
         result = self.run_guided_pipeline(build_four_nodes_enter_foreign_network())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.network_path, (1, 2, 2, 2))
         self.assert_key_requirements_by_model(
@@ -167,7 +167,7 @@ class FourNodesIntegrationTests(unittest.TestCase):
         """Spec: edge-by-edge preserves both boundaries; edge-to-edge collapses groups G1-G3."""
         pair = (1, 4)
         result = self.run_guided_pipeline(build_four_nodes_three_networks_destination_segment())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.network_path, (1, 2, 3, 3))
         self.assert_key_requirements_by_model(
@@ -198,7 +198,7 @@ class FourNodesIntegrationTests(unittest.TestCase):
         """Spec: a long source-local segment becomes N1-G1 before crossing G1-G2."""
         pair = (1, 4)
         result = self.run_guided_pipeline(build_four_nodes_exit_home_network())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.network_path, (1, 1, 1, 2))
         self.assert_key_requirements_by_model(
@@ -228,7 +228,7 @@ class FourNodesIntegrationTests(unittest.TestCase):
         """Spec: if the route returns to the source network, both edge-based models collapse to N1-N4."""
         pair = (1, 4)
         result = self.run_guided_pipeline(build_four_nodes_transit_and_return())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.network_path, (1, 2, 2, 1))
         self.assert_key_requirements_by_model(
@@ -256,7 +256,7 @@ class FourNodesIntegrationTests(unittest.TestCase):
         """Spec: source-local plus two boundary scopes, then edge-to-edge collapses the last two groups."""
         pair = (1, 4)
         result = self.run_guided_pipeline(build_four_nodes_three_networks_exit_chain())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.network_path, (1, 1, 2, 3))
         self.assert_key_requirements_by_model(
@@ -287,7 +287,7 @@ class FourNodesIntegrationTests(unittest.TestCase):
         """Spec: one boundary followed by a destination-local node-to-node segment."""
         pair = (1, 4)
         result = self.run_guided_pipeline(build_four_nodes_boundary_then_destination_segment())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.network_path, (1, 1, 2, 2))
         self.assert_key_requirements_by_model(
@@ -319,7 +319,7 @@ class FourNodesIntegrationTests(unittest.TestCase):
         """Spec: edge-by-edge keeps the foreign local segment; edge-to-edge collapses transit to G1-G3."""
         pair = (1, 4)
         result = self.run_guided_pipeline(build_four_nodes_foreign_segment_then_exit())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.network_path, (1, 2, 2, 3))
         self.assert_key_requirements_by_model(

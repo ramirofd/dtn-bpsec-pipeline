@@ -5,6 +5,7 @@ from modules.security.artifacts import NodeSecurityRequirement, ProtectionOperat
 from modules.security.keys import KeyRequirement, KeyScope, normalize_key_scope
 from modules.security.models import KeyType, NodeAction, SecurityModel, SecurityModelType, SecurityService
 from modules.security.planning import (
+    ConfiguredSecurityPolicy,
     DEFAULT_SECURITY_MODELS,
     SECURITY_MODEL_REGISTRY,
     BaseSecurityModel,
@@ -41,6 +42,7 @@ __all__ = [
     "EndToEndSecurityModel",
     "EdgeByEdgeSecurityModel",
     "EdgeToEdgeSecurityModel",
+    "ConfiguredSecurityPolicy",
     "DEFAULT_SECURITY_MODELS",
     "SECURITY_MODEL_REGISTRY",
     "get_security_model",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from modules.network.cgr.models import Route
+from modules.domain import RouteCandidate, RouteRef
 from modules.network.topology import Topology
 from modules.security.models import NetworkRole
 from modules.security.roles import get_network_role_for_endpoints
@@ -43,7 +43,7 @@ class BoundaryCrossing:
 class AnnotatedRoute:
     """A route plus node path, network path, crossings, and gateway metadata."""
 
-    route_id: str
+    ref: RouteRef
     src_node: int
     dst_node: int
     source_network: int
@@ -54,16 +54,18 @@ class AnnotatedRoute:
     boundary_crossings: tuple[BoundaryCrossing, ...]
     gateway_nodes: frozenset[int]
 
+    def __post_init__(self) -> None:
+        for name in ("hops", "node_path", "network_path", "boundary_crossings"):
+            object.__setattr__(self, name, tuple(getattr(self, name)))
+        object.__setattr__(self, "gateway_nodes", frozenset(self.gateway_nodes))
+
 
 def annotate_route(
-    route: Route,
+    route: RouteCandidate,
     topology: Topology,
-    *,
-    source_node: int,
-    destination_node: int,
-    route_id: str | None = None,
 ) -> AnnotatedRoute:
-    raw_hops = route.get_hops()
+    source_node, destination_node = route.ref.pair
+    raw_hops = route.contacts
     if not raw_hops:
         raise ValueError("route must contain at least one hop")
 
@@ -123,7 +125,7 @@ def annotate_route(
             gateway_nodes.add(contact.to)
 
     return AnnotatedRoute(
-        route_id=route_id or f"{source_node}->{destination_node}:{len(raw_hops)}h",
+        ref=route.ref,
         src_node=source_node,
         dst_node=destination_node,
         source_network=topology.get_network_for_node(source_node),
@@ -137,19 +139,7 @@ def annotate_route(
 
 
 def annotate_routes(
-    routes: list[Route] | tuple[Route, ...],
+    routes: tuple[RouteCandidate, ...],
     topology: Topology,
-    *,
-    source_node: int,
-    destination_node: int,
 ) -> tuple[AnnotatedRoute, ...]:
-    return tuple(
-        annotate_route(
-            route,
-            topology,
-            source_node=source_node,
-            destination_node=destination_node,
-            route_id=f"route-{index}",
-        )
-        for index, route in enumerate(routes, start=1)
-    )
+    return tuple(annotate_route(route, topology) for route in routes)

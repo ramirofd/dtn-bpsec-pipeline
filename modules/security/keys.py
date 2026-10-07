@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from modules.domain import OperationRef
 from modules.security.models import KeyType, SecurityService
 
 
@@ -27,7 +28,7 @@ class KeyRecord:
 
 @dataclass(slots=True, frozen=True)
 class KeyRequirement:
-    operation_id: str
+    operation_ref: OperationRef
     key_type: KeyType
     usage: SecurityService
     source_id: int

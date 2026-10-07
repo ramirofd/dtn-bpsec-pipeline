@@ -1,240 +1,86 @@
+"""Composable domain pipeline; stages communicate only through catalogs."""
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Sequence
 
-from modules.network.py_cgr_lib import Route, cp_load
-from modules.network.topology import Topology, topology_load
-from modules.security.annotated_routes import AnnotatedRoute, annotate_routes
-from modules.security.artifacts import ProtectionPlan
-from modules.security.models import SecurityModel, SecurityModelType
-from modules.security.planning import build_protection_plan, resolve_security_models
-from pipelines.routing import RoutingAlgorithm, RoutingRequest, ensure_routing_algorithm
-
-if TYPE_CHECKING:
-    from modules.network.cgr.algorithms import ContactPlan
+from modules.domain import PlanRef, RouteCandidate, RouteRef
+from modules.security.annotated_routes import annotate_route
+from modules.security.planning import ConfiguredSecurityPolicy, DEFAULT_SECURITY_MODELS
+from pipelines.catalogs import AnnotationCatalog, ProtectionCatalog, RouteCatalog
+from pipelines.contracts import ProtectionPlanner, RouteAnnotator, RoutePlanner
+from pipelines.routing import CGRYenRouting, RoutingAlgorithm, RoutingBatchRequest, RoutingRequest
 
 
-NodePair = tuple[int, int]
-
-
-@dataclass(slots=True, frozen=True)
-class RoutingBatchResult:
-    """Raw candidate routes computed for every ordered source-destination pair."""
-
-    topology: Topology
-    contact_plan_size: int
-    pairs: tuple[NodePair, ...]
-    routes_by_pair: dict[NodePair, tuple[Route, ...]]
-
-
-@dataclass(slots=True, frozen=True)
-class AnnotationBatchResult:
-    """Routing results enriched with topology-aware route annotations."""
-
-    topology: Topology
-    contact_plan_size: int
-    pairs: tuple[NodePair, ...]
-    routes_by_pair: dict[NodePair, tuple[Route, ...]]
-    annotated_routes_by_pair: dict[NodePair, tuple[AnnotatedRoute, ...]]
-
-
-@dataclass(slots=True, frozen=True)
-class SecurityBatchResult:
-    """Protection plans grouped first by security model and then by ordered pair."""
-
-    pairs: tuple[NodePair, ...]
-    symmetric_keys: bool
-    plans_by_model: dict[SecurityModelType, dict[NodePair, tuple[ProtectionPlan, ...]]]
-
-
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True, slots=True)
 class SimulationResult:
-    """Full pipeline output preserving routing, annotation, and security lineage."""
+    routes: RouteCatalog
+    annotations: AnnotationCatalog
+    protection: ProtectionCatalog
 
-    topology: Topology
-    contact_plan_size: int
-    routing: RoutingBatchResult
-    annotation: AnnotationBatchResult
-    security: SecurityBatchResult
+    def __post_init__(self) -> None:
+        if self.annotations.routes is not self.routes or self.protection.annotations is not self.annotations:
+            raise ValueError("simulation catalogs must preserve their stage lineage")
 
 
 class RoutingStage:
-    def __init__(
-        self,
-        routing_algorithm: RoutingAlgorithm | None = None,
-        *,
-        default_num_routes: int = 3,
-    ) -> None:
-        self.routing_algorithm = routing_algorithm
-        self.default_num_routes = default_num_routes
+    def __init__(self, algorithm: RoutingAlgorithm | None = None) -> None:
+        self.algorithm = CGRYenRouting() if algorithm is None else algorithm
 
-    def compute(
-        self,
-        *,
-        topology: Topology,
-        contact_plan: ContactPlan,
-        curr_time: int = 0,
-        num_routes: int | None = None,
-    ) -> RoutingBatchResult:
-        resolved_default_num_routes = (
-            self.default_num_routes if num_routes is None else num_routes
-        )
-        algorithm = ensure_routing_algorithm(
-            self.routing_algorithm,
-            default_num_routes=resolved_default_num_routes,
-        )
-        pairs = _enumerate_node_pairs(topology)
-        routes_by_pair = {
-            pair: tuple(
-                algorithm.compute_routes(
-                    RoutingRequest(
-                        source=pair[0],
-                        destination=pair[1],
-                        curr_time=curr_time,
-                        contact_plan=contact_plan,
-                        topology=topology,
-                        num_routes=num_routes,
-                    )
-                )
-            )
-            for pair in pairs
-        }
-
-        return RoutingBatchResult(
-            topology=topology,
-            contact_plan_size=len(contact_plan),
-            pairs=pairs,
-            routes_by_pair=routes_by_pair,
-        )
+    def compute(self, request: RoutingBatchRequest) -> RouteCatalog:
+        scenario = request.scenario
+        candidates: dict[RouteRef, RouteCandidate] = {}
+        for pair in scenario.pairs:
+            routes = self.algorithm.compute_routes(RoutingRequest(
+                source=pair[0], destination=pair[1], curr_time=request.curr_time,
+                contacts=scenario.contacts, topology=scenario.topology, num_routes=request.num_routes,
+            ))
+            if request.num_routes is not None:
+                routes = routes[:request.num_routes]
+            for index, route in enumerate(routes, start=1):
+                ref = RouteRef(pair, index)
+                candidates[ref] = RouteCandidate.from_route(ref, route)
+        return RouteCatalog(scenario, candidates)
 
 
 class RouteAnnotationStage:
-    def annotate(self, routing: RoutingBatchResult) -> AnnotationBatchResult:
-        annotated_routes_by_pair = {
-            pair: annotate_routes(
-                routing.routes_by_pair[pair],
-                routing.topology,
-                source_node=pair[0],
-                destination_node=pair[1],
-            )
-            for pair in routing.pairs
-        }
-        return AnnotationBatchResult(
-            topology=routing.topology,
-            contact_plan_size=routing.contact_plan_size,
-            pairs=routing.pairs,
-            routes_by_pair=routing.routes_by_pair,
-            annotated_routes_by_pair=annotated_routes_by_pair,
-        )
+    def annotate(self, routes: RouteCatalog) -> AnnotationCatalog:
+        return AnnotationCatalog(routes, {
+            ref: annotate_route(candidate, routes.scenario.topology)
+            for ref, candidate in routes.by_id.items()
+        })
 
 
 class SecurityPlanningStage:
-    def build_batch(
-        self,
-        annotation: AnnotationBatchResult,
-        *,
-        security_models: Sequence[SecurityModel | SecurityModelType] | None = None,
-        symmetric_keys: bool = False,
-    ) -> SecurityBatchResult:
-        resolved_models = resolve_security_models(security_models)
-        plans_by_model = {
-            model.type: {
-                pair: tuple(
-                    build_protection_plan(model, route)
-                    for route in annotation.annotated_routes_by_pair[pair]
-                )
-                for pair in annotation.pairs
-            }
-            for model in resolved_models
-        }
-        return SecurityBatchResult(
-            pairs=annotation.pairs,
-            symmetric_keys=symmetric_keys,
-            plans_by_model=plans_by_model,
+    def __init__(self, policies: Sequence[ConfiguredSecurityPolicy] | None = None) -> None:
+        self.policies = tuple(
+            ConfiguredSecurityPolicy(model.type.name, model) for model in DEFAULT_SECURITY_MODELS
+        ) if policies is None else tuple(policies)
+        ids = [policy.policy_id for policy in self.policies]
+        if len(ids) != len(set(ids)):
+            raise ValueError("configured policy identifiers must be unique")
+
+    def build(self, annotations: AnnotationCatalog) -> ProtectionCatalog:
+        return ProtectionCatalog(
+            annotations,
+            {policy.policy_id: policy.model.type for policy in self.policies},
+            {PlanRef(ref, policy.policy_id): policy.model.build_plan(annotation, policy_id=policy.policy_id)
+             for ref, annotation in annotations.by_route.items() for policy in self.policies},
         )
 
 
 class SimulationPipeline:
-    def __init__(
-        self,
-        *,
-        routing_stage: RoutingStage | None = None,
-        annotation_stage: RouteAnnotationStage | None = None,
-        security_stage: SecurityPlanningStage | None = None,
-    ) -> None:
-        self.routing_stage = routing_stage or RoutingStage()
-        self.annotation_stage = annotation_stage or RouteAnnotationStage()
-        self.security_stage = security_stage or SecurityPlanningStage()
+    def __init__(self, *, routing: RoutePlanner | None = None,
+                 annotation: RouteAnnotator | None = None,
+                 security: ProtectionPlanner | None = None) -> None:
+        self.routing = RoutingStage() if routing is None else routing
+        self.annotation = RouteAnnotationStage() if annotation is None else annotation
+        self.security = SecurityPlanningStage() if security is None else security
 
-    def run(
-        self,
-        *,
-        cp_path: str,
-        topology_path: str,
-        security_models: Sequence[SecurityModel | SecurityModelType] | None = None,
-        symmetric_keys: bool = False,
-        curr_time: int = 0,
-        routing_algorithm: RoutingAlgorithm | None = None,
-        num_routes: int | None = None,
-    ) -> SimulationResult:
-        return self.run_loaded(
-            topology=topology_load(topology_path),
-            contact_plan=cp_load(cp_path),
-            security_models=security_models,
-            symmetric_keys=symmetric_keys,
-            curr_time=curr_time,
-            routing_algorithm=routing_algorithm,
-            num_routes=num_routes,
-        )
-
-    def run_loaded(
-        self,
-        *,
-        topology: Topology,
-        contact_plan: ContactPlan,
-        security_models: Sequence[SecurityModel | SecurityModelType] | None = None,
-        symmetric_keys: bool = False,
-        curr_time: int = 0,
-        routing_algorithm: RoutingAlgorithm | None = None,
-        num_routes: int | None = None,
-    ) -> SimulationResult:
-        routing_stage = (
-            RoutingStage(
-                routing_algorithm,
-                default_num_routes=self.routing_stage.default_num_routes,
-            )
-            if routing_algorithm is not None
-            else self.routing_stage
-        )
-
-        routing = routing_stage.compute(
-            topology=topology,
-            contact_plan=contact_plan,
-            curr_time=curr_time,
-            num_routes=num_routes,
-        )
-        annotation = self.annotation_stage.annotate(routing)
-        security = self.security_stage.build_batch(
-            annotation,
-            security_models=security_models,
-            symmetric_keys=symmetric_keys,
-        )
-
-        return SimulationResult(
-            topology=topology,
-            contact_plan_size=len(contact_plan),
-            routing=routing,
-            annotation=annotation,
-            security=security,
-        )
-
-
-def _enumerate_node_pairs(topology: Topology) -> tuple[NodePair, ...]:
-    ordered_nodes = tuple(sorted(topology))
-    return tuple(
-        (source, destination)
-        for source in ordered_nodes
-        for destination in ordered_nodes
-        if source != destination
-    )
+    def run(self, request: RoutingBatchRequest) -> SimulationResult:
+        routes = self.routing.compute(request)
+        if routes.scenario is not request.scenario:
+            raise ValueError("routing stage must preserve the requested scenario")
+        annotations = self.annotation.annotate(routes)
+        protection = self.security.build(annotations)
+        return SimulationResult(routes, annotations, protection)

@@ -9,7 +9,7 @@ import pandas as pd
 
 from modules.security.keys import KeyScope
 from modules.security.models import KeyType, SecurityModelType
-from pipelines.route_activation import RouteActivationSelection
+from pipelines.activation import RouteActivationSelection
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -103,6 +103,14 @@ def format_model_series(values: Sequence[Any] | pd.Series) -> pd.Series:
             name=formatted.name,
         )
     return formatted
+
+
+def model_display_order(values: Sequence[Any] | pd.Series) -> list[str]:
+    """Keep familiar families first without dropping configured policy names."""
+    labels = list(dict.fromkeys(format_model_label(value) for value in values))
+    return [label for label in MODEL_DISPLAY_ORDER if label in labels] + [
+        label for label in labels if label not in MODEL_DISPLAY_ORDER
+    ]
 
 
 def palette_for(
@@ -423,6 +431,8 @@ def plot_metric_curve(
 ) -> Axes:
     if df.empty:
         return _empty_plot(ax, message="No data available to plot.")
+    if df.dropna(subset=[x, y]).empty:
+        return _empty_plot(ax, message="No feasible solution available to plot.")
 
     _, sns, mtick = _load_plot_modules()
     ax = _resolve_ax(ax)
@@ -445,7 +455,7 @@ def plot_metric_curve(
     resolved_palette = palette
     if hue_arg == "model":
         plot_df[hue_arg] = format_model_series(plot_df[hue_arg])
-        hue_order = MODEL_DISPLAY_ORDER
+        hue_order = model_display_order(plot_df[hue_arg])
         resolved_palette = palette_for(plot_df[hue_arg], palette=palette)
 
     sns.lineplot(
@@ -489,6 +499,8 @@ def plot_metric_bars_by_model(
 ) -> Axes:
     if df.empty:
         return _empty_plot(ax, message="No data available to plot.")
+    if df[y].isna().all():
+        return _empty_plot(ax, message="No feasible solution available to plot.")
 
     _, sns, mtick = _load_plot_modules()
     ax = _resolve_ax(ax)
@@ -506,8 +518,8 @@ def plot_metric_bars_by_model(
         x="model",
         y=y_plot,
         hue="model",
-        order=MODEL_DISPLAY_ORDER,
-        hue_order=MODEL_DISPLAY_ORDER,
+        order=model_display_order(plot_df["model"]),
+        hue_order=model_display_order(plot_df["model"]),
         dodge=False,
         palette=plot_palette,
         legend=False,
@@ -933,6 +945,7 @@ __all__ = [
     "KEY_TYPE_LABELS",
     "set_plot_theme",
     "format_model_label",
+    "model_display_order",
     "format_model_series",
     "palette_for",
     "secondary_palette",

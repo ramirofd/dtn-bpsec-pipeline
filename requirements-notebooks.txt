@@ -1,0 +1,7 @@
+-r requirements-optimization.txt
+
+# Notebook execution and plotting, validated with the scenario notebooks.
+seaborn~=0.13
+nbformat~=5.10
+nbclient~=0.10
+ipykernel~=7.2

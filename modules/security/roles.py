@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from modules.domain import ContactSnapshot
 from modules.network.cgr.models import Bundle, Contact
 from modules.network.topology import Topology
 from modules.security.models import NetworkRole
@@ -10,7 +11,7 @@ from modules.security.models import NetworkRole
 def get_network_role_for_endpoints(
     source_node: int,
     destination_node: int,
-    contact: Contact,
+    contact: Contact | ContactSnapshot,
     topology: Topology,
     current_node: int,
 ) -> NetworkRole:
@@ -43,7 +44,7 @@ def get_network_role_for_endpoints(
 
 def get_network_role_from_hop(
     bundle: Bundle,
-    contact: Contact,
+    contact: Contact | ContactSnapshot,
     topology: Topology,
     current_node: int,
 ) -> NetworkRole:

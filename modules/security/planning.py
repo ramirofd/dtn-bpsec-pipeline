@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from abc import ABC
+from dataclasses import dataclass
+from types import MappingProxyType
+
+from modules.domain import OperationRef, PlanRef
 from typing import Sequence
 
 from modules.security.annotated_routes import AnnotatedHop, AnnotatedRoute, BoundaryCrossing
@@ -19,6 +23,7 @@ class BaseSecurityModel(SecurityModel, ABC):
         annotated_route: AnnotatedRoute,
         operations: tuple[ProtectionOperation, ...],
         *,
+        plan_ref: PlanRef,
         notes: tuple[str, ...] = (),
     ) -> ProtectionPlan:
         node_requirements: list[NodeSecurityRequirement] = []
@@ -29,7 +34,7 @@ class BaseSecurityModel(SecurityModel, ABC):
             key_requirements.append(self._build_key_requirement(operation))
 
         return ProtectionPlan(
-            route_id=annotated_route.route_id,
+            ref=plan_ref,
             model=self.type,
             operations=operations,
             node_requirements=tuple(node_requirements),
@@ -41,6 +46,7 @@ class BaseSecurityModel(SecurityModel, ABC):
         self,
         *,
         annotated_route: AnnotatedRoute,
+        plan_ref: PlanRef,
         crossing: BoundaryCrossing,
         key_type: KeyType,
     ) -> ProtectionOperation:
@@ -56,7 +62,7 @@ class BaseSecurityModel(SecurityModel, ABC):
             key_target_id = crossing.to_network
 
         return ProtectionOperation(
-            operation_id=f"{annotated_route.route_id}:{self.name}:{crossing.crossing_index}",
+            ref=OperationRef(plan_ref, f"boundary:{crossing.crossing_index}"),
             model=self.type,
             service=self.service,
             source_node=crossing.exit_node,
@@ -74,16 +80,14 @@ class BaseSecurityModel(SecurityModel, ABC):
         self,
         *,
         annotated_route: AnnotatedRoute,
+        plan_ref: PlanRef,
         hops: tuple[AnnotatedHop, ...],
         rationale: str,
     ) -> ProtectionOperation:
         first_hop = hops[0]
         last_hop = hops[-1]
         return ProtectionOperation(
-            operation_id=(
-                f"{annotated_route.route_id}:{self.name}:segment:"
-                f"{first_hop.hop_index}-{last_hop.hop_index}"
-            ),
+            ref=OperationRef(plan_ref, f"segment:{first_hop.hop_index}-{last_hop.hop_index}"),
             model=self.type,
             service=self.service,
             source_node=first_hop.from_node,
@@ -101,6 +105,7 @@ class BaseSecurityModel(SecurityModel, ABC):
         self,
         *,
         annotated_route: AnnotatedRoute,
+        plan_ref: PlanRef,
         hops: tuple[AnnotatedHop, ...],
         operation_suffix: str,
         rationale: str,
@@ -108,7 +113,7 @@ class BaseSecurityModel(SecurityModel, ABC):
         first_hop = hops[0]
         last_hop = hops[-1]
         return ProtectionOperation(
-            operation_id=f"{annotated_route.route_id}:{self.name}:{operation_suffix}",
+            ref=OperationRef(plan_ref, operation_suffix),
             model=self.type,
             service=self.service,
             source_node=first_hop.from_node,
@@ -128,7 +133,7 @@ class BaseSecurityModel(SecurityModel, ABC):
     ) -> tuple[NodeSecurityRequirement, NodeSecurityRequirement]:
         return (
             NodeSecurityRequirement(
-                operation_id=operation.operation_id,
+                operation_ref=operation.ref,
                 node_id=operation.source_node,
                 role=NodeAction.SOURCE,
                 service=operation.service,
@@ -138,7 +143,7 @@ class BaseSecurityModel(SecurityModel, ABC):
                 rationale=operation.rationale,
             ),
             NodeSecurityRequirement(
-                operation_id=operation.operation_id,
+                operation_ref=operation.ref,
                 node_id=operation.acceptor_node,
                 role=NodeAction.ACCEPT,
                 service=operation.service,
@@ -151,7 +156,7 @@ class BaseSecurityModel(SecurityModel, ABC):
 
     def _build_key_requirement(self, operation: ProtectionOperation) -> KeyRequirement:
         return KeyRequirement(
-            operation_id=operation.operation_id,
+            operation_ref=operation.ref,
             key_type=operation.required_key_type,
             usage=operation.service,
             source_id=operation.key_source_id,
@@ -164,10 +169,11 @@ class BaseSecurityModel(SecurityModel, ABC):
 class HopByHopSecurityModel(BaseSecurityModel):
     type = SecurityModelType.HOP_BY_HOP
 
-    def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
+    def build_plan(self, annotated_route: AnnotatedRoute, *, policy_id: str | None = None) -> ProtectionPlan:
+        plan_ref = PlanRef(annotated_route.ref, self.type.name if policy_id is None else policy_id)
         operations = tuple(
             ProtectionOperation(
-                operation_id=f"{annotated_route.route_id}:hop:{hop.hop_index}",
+                ref=OperationRef(plan_ref, f"hop:{hop.hop_index}"),
                 model=self.type,
                 service=self.service,
                 source_node=hop.from_node,
@@ -182,15 +188,16 @@ class HopByHopSecurityModel(BaseSecurityModel):
             )
             for hop in annotated_route.hops
         )
-        return self._build_plan(annotated_route, operations)
+        return self._build_plan(annotated_route, operations, plan_ref=plan_ref)
 
 
 class EndToEndSecurityModel(BaseSecurityModel):
     type = SecurityModelType.END_TO_END
 
-    def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
+    def build_plan(self, annotated_route: AnnotatedRoute, *, policy_id: str | None = None) -> ProtectionPlan:
+        plan_ref = PlanRef(annotated_route.ref, self.type.name if policy_id is None else policy_id)
         operation = ProtectionOperation(
-            operation_id=f"{annotated_route.route_id}:e2e",
+            ref=OperationRef(plan_ref, "e2e"),
             model=self.type,
             service=self.service,
             source_node=annotated_route.src_node,
@@ -206,19 +213,21 @@ class EndToEndSecurityModel(BaseSecurityModel):
                 "with a single end-to-end BCB"
             ),
         )
-        return self._build_plan(annotated_route, (operation,))
+        return self._build_plan(annotated_route, (operation,), plan_ref=plan_ref)
 
 
 class EdgeByEdgeSecurityModel(BaseSecurityModel):
     type = SecurityModelType.EDGE_BY_EDGE
 
-    def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
+    def build_plan(self, annotated_route: AnnotatedRoute, *, policy_id: str | None = None) -> ProtectionPlan:
+        plan_ref = PlanRef(annotated_route.ref, self.type.name if policy_id is None else policy_id)
         if (
             not annotated_route.boundary_crossings
             or annotated_route.source_network == annotated_route.destination_network
         ):
             operation = self._build_endpoint_span_operation(
                 annotated_route=annotated_route,
+                plan_ref=plan_ref,
                 hops=annotated_route.hops,
                 operation_suffix="local",
                 rationale="Protect the whole route between the bundle endpoints",
@@ -226,6 +235,7 @@ class EdgeByEdgeSecurityModel(BaseSecurityModel):
             return self._build_plan(
                 annotated_route,
                 (operation,),
+                plan_ref=plan_ref,
                 notes=(
                     "Route stays within one network; edge-by-edge degenerates to local intra-network protection.",
                 )
@@ -252,6 +262,7 @@ class EdgeByEdgeSecurityModel(BaseSecurityModel):
             operations.append(
                 self._build_intra_network_segment_operation(
                     annotated_route=annotated_route,
+                    plan_ref=plan_ref,
                     hops=source_segment_hops,
                     rationale="Protect the source-network segment from the bundle source to the exit gateway",
                 )
@@ -261,6 +272,7 @@ class EdgeByEdgeSecurityModel(BaseSecurityModel):
             operations.append(
                 self._build_boundary_operation(
                     annotated_route=annotated_route,
+                    plan_ref=plan_ref,
                     crossing=crossing,
                     key_type=KeyType.GROUP_TO_GROUP,
                 )
@@ -279,6 +291,7 @@ class EdgeByEdgeSecurityModel(BaseSecurityModel):
                 operations.append(
                     self._build_intra_network_segment_operation(
                         annotated_route=annotated_route,
+                        plan_ref=plan_ref,
                         hops=middle_segment_hops,
                         rationale=(
                             "Protect the intra-network segment between an entrance gateway "
@@ -294,6 +307,7 @@ class EdgeByEdgeSecurityModel(BaseSecurityModel):
             operations.append(
                 self._build_endpoint_span_operation(
                     annotated_route=annotated_route,
+                    plan_ref=plan_ref,
                     hops=destination_segment_hops,
                     operation_suffix=(
                         f"destination:{destination_segment_hops[0].hop_index}-"
@@ -306,19 +320,21 @@ class EdgeByEdgeSecurityModel(BaseSecurityModel):
                 )
             )
 
-        return self._build_plan(annotated_route, tuple(operations))
+        return self._build_plan(annotated_route, tuple(operations), plan_ref=plan_ref)
 
 
 class EdgeToEdgeSecurityModel(BaseSecurityModel):
     type = SecurityModelType.EDGE_TO_EDGE
 
-    def build_plan(self, annotated_route: AnnotatedRoute) -> ProtectionPlan:
+    def build_plan(self, annotated_route: AnnotatedRoute, *, policy_id: str | None = None) -> ProtectionPlan:
+        plan_ref = PlanRef(annotated_route.ref, self.type.name if policy_id is None else policy_id)
         if (
             not annotated_route.boundary_crossings
             or annotated_route.source_network == annotated_route.destination_network
         ):
             operation = self._build_endpoint_span_operation(
                 annotated_route=annotated_route,
+                plan_ref=plan_ref,
                 hops=annotated_route.hops,
                 operation_suffix="local",
                 rationale="Protect the whole route between the bundle endpoints",
@@ -326,6 +342,7 @@ class EdgeToEdgeSecurityModel(BaseSecurityModel):
             return self._build_plan(
                 annotated_route,
                 (operation,),
+                plan_ref=plan_ref,
                 notes=(
                     "Route stays within one network; edge-to-edge degenerates to local intra-network protection.",
                 )
@@ -349,6 +366,7 @@ class EdgeToEdgeSecurityModel(BaseSecurityModel):
             operations.append(
                 self._build_intra_network_segment_operation(
                     annotated_route=annotated_route,
+                    plan_ref=plan_ref,
                     hops=source_segment_hops,
                     rationale="Protect the source-network segment from the bundle source to the exit gateway",
                 )
@@ -356,7 +374,7 @@ class EdgeToEdgeSecurityModel(BaseSecurityModel):
 
         operations.append(
             ProtectionOperation(
-                operation_id=f"{annotated_route.route_id}:{self.name}:transit",
+                ref=OperationRef(plan_ref, "transit"),
                 model=self.type,
                 service=self.service,
                 source_node=first_crossing.exit_node,
@@ -385,6 +403,7 @@ class EdgeToEdgeSecurityModel(BaseSecurityModel):
             operations.append(
                 self._build_endpoint_span_operation(
                     annotated_route=annotated_route,
+                    plan_ref=plan_ref,
                     hops=destination_segment_hops,
                     operation_suffix=(
                         f"destination:{destination_segment_hops[0].hop_index}-"
@@ -397,7 +416,7 @@ class EdgeToEdgeSecurityModel(BaseSecurityModel):
                 )
             )
 
-        return self._build_plan(annotated_route, tuple(operations))
+        return self._build_plan(annotated_route, tuple(operations), plan_ref=plan_ref)
 
 
 HOP_BY_HOP_MODEL = HopByHopSecurityModel()
@@ -412,10 +431,7 @@ DEFAULT_SECURITY_MODELS = (
     EDGE_TO_EDGE_MODEL,
 )
 
-SECURITY_MODEL_REGISTRY = {
-    model.type: model
-    for model in DEFAULT_SECURITY_MODELS
-}
+SECURITY_MODEL_REGISTRY = MappingProxyType({model.type: model for model in DEFAULT_SECURITY_MODELS})
 
 
 def get_security_model(
@@ -440,18 +456,21 @@ def resolve_security_models(
 def build_protection_plan(
     model: SecurityModel | SecurityModelType,
     annotated_route: AnnotatedRoute,
+    *, policy_id: str | None = None,
 ) -> ProtectionPlan:
-    return get_security_model(model).build_plan(annotated_route)
+    return get_security_model(model).build_plan(annotated_route, policy_id=policy_id)
 
 
 def build_protection_plans(
     model: SecurityModel | SecurityModelType,
     annotated_routes: Sequence[AnnotatedRoute],
+    *, policy_id: str | None = None,
 ) -> tuple[ProtectionPlan, ...]:
-    return get_security_model(model).build_plans(annotated_routes)
+    return get_security_model(model).build_plans(annotated_routes, policy_id=policy_id)
 
 
 __all__ = [
+    "ConfiguredSecurityPolicy",
     "BaseSecurityModel",
     "HopByHopSecurityModel",
     "EndToEndSecurityModel",
@@ -464,3 +483,17 @@ __all__ = [
     "build_protection_plan",
     "build_protection_plans",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class ConfiguredSecurityPolicy:
+    """A policy identity is independent of its security-model family."""
+
+    policy_id: str
+    model: SecurityModel
+
+    def __post_init__(self) -> None:
+        if not self.policy_id or not self.policy_id.strip():
+            raise ValueError("policy_id must not be empty")
+        if not isinstance(self.model, SecurityModel):
+            raise TypeError("model must implement SecurityModel")

@@ -1,8 +1,18 @@
-import gurobipy as gp
-import pandas as pd
-from gurobipy import GRB
+from __future__ import annotations
 
-from modules.security.models import SecurityModelType
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
+
+import pandas as pd
+
+from models.common.coverage import attach_pair_coverage
+from models.common.results import OptimizationResult
+from models.common.runner import OptimizationBindings, budget_points, run_optimization
+from pipelines.activation import ActivationProblem, attach_global_activation
+
+if TYPE_CHECKING:
+    import gurobipy as gp
+
 from models.plot_utils import (
     palette_for,
     plot_contact_usage_heatmap,
@@ -11,122 +21,35 @@ from models.plot_utils import (
     plot_network_crossing_heatmap,
     plot_pair_coverage_heatmap,
 )
-from pipelines.route_activation import (
-    RouteActivationPlanner,
-    attach_route_activation_constraints,
-    trace_route_activation_solution,
-)
 
+def build(model: gp.Model, problem: ActivationProblem) -> OptimizationBindings:
+    import gurobipy as gp
+    from gurobipy import GRB
 
-def solve_for_security_model(result, security_model: SecurityModelType):
-    planning = RouteActivationPlanner().build_for_model(
-        result.security,
-        model=security_model,
-    )
-
-    model = gp.Model(f"budget_connectivity_sweep_{security_model.name.lower()}")
-    model.setParam("OutputFlag", 0)
-
-    artifacts = attach_route_activation_constraints(model, planning)
-
-    pair_ids = [f"{src}->{dst}" for src, dst in result.security.pairs]
-    pair_vars = {
-        pair_id: model.addVar(vtype=GRB.BINARY, name=f"pair[{pair_id}]")
-        for pair_id in pair_ids
-    }
-
-    routes_by_pair = {pair_id: [] for pair_id in pair_ids}
-    for route_id in artifacts.route_vars:
-        pair_id = route_id.split(":")[0]
-        routes_by_pair[pair_id].append(route_id)
-
-    for route_id, route_var in artifacts.route_vars.items():
-        pair_id = route_id.split(":")[0]
-        model.addConstr(
-            route_var <= pair_vars[pair_id],
-            name=f"route_implies_pair[{route_id}]",
-        )
-
-    for pair_id, route_ids in routes_by_pair.items():
-        model.addConstr(
-            pair_vars[pair_id]
-            <= gp.quicksum(artifacts.route_vars[route_id] for route_id in route_ids),
-            name=f"pair_has_route[{pair_id}]",
-        )
-
-    budget_constr = model.addConstr(
-        gp.quicksum(artifacts.key_vars.values()) <= 0,
-        name="max_active_keys",
-    )
-
-    pair_weight = (
-        len(artifacts.key_vars) * (len(artifacts.route_vars) + 1)
-        + len(artifacts.route_vars)
-        + 1
-    )
-    key_weight = len(artifacts.route_vars) + 1
+    activation = attach_global_activation(model, problem)
+    coverage = attach_pair_coverage(activation)
+    budget = model.addConstr(gp.quicksum(activation.key_vars.values()) <= 0, name="max_active_keys")
+    # Preserve the original priority: pairs, then fewer keys, then more routes.
+    pair_weight = len(activation.key_vars) * (len(activation.route_vars) + 1) + len(activation.route_vars) + 1
+    key_weight = len(activation.route_vars) + 1
     model.setObjective(
-        pair_weight * gp.quicksum(pair_vars.values())
-        - key_weight * gp.quicksum(artifacts.key_vars.values())
-        + gp.quicksum(artifacts.route_vars.values()),
+        pair_weight * coverage.covered_pair_count
+        - key_weight * gp.quicksum(activation.key_vars.values())
+        + gp.quicksum(activation.route_vars.values()),
         GRB.MAXIMIZE,
     )
+    return OptimizationBindings(activation, budget)
 
-    sweep_rows = []
-    trace_rows = []
 
-    for max_keys in range(len(planning.key_scopes) + 1):
-        budget_constr.RHS = max_keys
-        model.optimize()
-
-        if model.SolCount == 0:
-            sweep_rows.append(
-                {
-                    "max_keys": max_keys,
-                    "selected_pairs": 0,
-                    "selected_routes": 0,
-                    "selected_keys": 0,
-                    "achieved_connectivity_pct": 0.0,
-                }
-            )
-            trace_rows.append(None)
-            continue
-
-        selected_route_ids = {
-            route_id
-            for route_id, var in artifacts.route_vars.items()
-            if var.X > 0.5
-        }
-        selected_pairs = sum(
-            1 for var in pair_vars.values()
-            if var.X > 0.5
-        )
-        selected_keys = sum(
-            1 for var in artifacts.key_vars.values()
-            if var.X > 0.5
-        )
-
-        sweep_rows.append(
-            {
-                "max_keys": max_keys,
-                "selected_pairs": selected_pairs,
-                "selected_routes": len(selected_route_ids),
-                "selected_keys": selected_keys,
-                "achieved_connectivity_pct": 100.0 * selected_pairs / len(pair_ids),
-            }
-        )
-        trace_rows.append(
-            trace_route_activation_solution(
-                result,
-                artifacts,
-                security_model=security_model,
-            )
-        )
-
-    new_df = pd.DataFrame(sweep_rows)
-    new_df["model"] = security_model.name
-
-    return tuple(trace_rows), new_df
+def solve(
+    problem: ActivationProblem, *, key_budgets: Iterable[int] | None = None,
+    env: gp.Env | None = None,
+) -> OptimizationResult:
+    """Maximize pair coverage, keeping the original weighted tie breakers."""
+    return run_optimization(
+        problem, name="budget_connectivity_sweep", build=build,
+        points=budget_points(key_budgets, len(problem.key_scopes)), env=env,
+    )
 
 
 def plot_connectivity_vs_budget(

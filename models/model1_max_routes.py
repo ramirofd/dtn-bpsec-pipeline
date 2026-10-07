@@ -1,7 +1,17 @@
-import gurobipy as gp
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
+
 import pandas as pd
-from gurobipy import GRB
-from modules.security.models import SecurityModelType
+
+from models.common.results import OptimizationResult
+from models.common.runner import OptimizationBindings, budget_points, run_optimization
+from pipelines.activation import ActivationProblem, attach_global_activation
+
+if TYPE_CHECKING:
+    import gurobipy as gp
+
 from models.plot_utils import (
     palette_for,
     plot_contact_usage_heatmap,
@@ -10,83 +20,27 @@ from models.plot_utils import (
     plot_metric_curve,
     plot_network_crossing_heatmap,
 )
-from pipelines.route_activation import (
-    RouteActivationPlanner,
-    attach_route_activation_constraints,
-    trace_route_activation_solution,
-)
 
 
-def solve_for_security_model(result, security_model: SecurityModelType):
-    planning = RouteActivationPlanner().build_for_model(
-        result.security,
-        model=security_model,
+def build(model: gp.Model, problem: ActivationProblem) -> OptimizationBindings:
+    import gurobipy as gp
+    from gurobipy import GRB
+
+    activation = attach_global_activation(model, problem)
+    budget = model.addConstr(gp.quicksum(activation.key_vars.values()) <= 0, name="max_active_keys")
+    model.setObjective(gp.quicksum(activation.route_vars.values()), GRB.MAXIMIZE)
+    return OptimizationBindings(activation, budget)
+
+
+def solve(
+    problem: ActivationProblem, *, key_budgets: Iterable[int] | None = None,
+    env: gp.Env | None = None,
+) -> OptimizationResult:
+    """Maximize enabled routes for each requested global-key budget."""
+    return run_optimization(
+        problem, name="budget_sweep", build=build,
+        points=budget_points(key_budgets, len(problem.key_scopes)), env=env,
     )
-
-    model = gp.Model(f"budget_sweep_{security_model.name.lower()}")
-    model.setParam("OutputFlag", 0)
-
-    artifacts = attach_route_activation_constraints(model, planning)
-
-    budget_constr = model.addConstr(
-        gp.quicksum(artifacts.key_vars.values()) <= 0,
-        name="max_active_keys",
-    )
-
-    model.setObjective(gp.quicksum(artifacts.route_vars.values()), GRB.MAXIMIZE)
-
-    sweep_rows = []
-    trace_rows = []
-
-    for max_keys in range(len(planning.key_scopes) + 1):
-        budget_constr.RHS = max_keys
-        model.optimize()
-
-        if model.SolCount == 0:
-            sweep_rows.append({
-                "max_keys": max_keys,
-                "selected_routes": 0,
-                "selected_pairs": 0,
-                "selected_keys": 0,
-                "connectivity_pct": 0.0,
-            })
-            trace_rows.append(None)
-            continue
-
-        selected_route_ids = {
-            route_id
-            for route_id, var in artifacts.route_vars.items()
-            if var.X > 0.5
-        }
-
-        selected_pairs = {
-            route_id.split(":")[0]
-            for route_id in selected_route_ids
-        }
-
-        selected_keys = sum(
-            1 for var in artifacts.key_vars.values()
-            if var.X > 0.5
-        )
-
-        sweep_rows.append({
-            "max_keys": max_keys,
-            "selected_routes": len(selected_route_ids),
-            "selected_pairs": len(selected_pairs),
-            "selected_keys": selected_keys,
-            "connectivity_pct": 100.0 * len(selected_pairs) / len(result.security.pairs),
-        })
-        trace_rows.append(
-            trace_route_activation_solution(
-                result,
-                artifacts,
-                security_model=security_model,
-            )
-        )
-    new_df = pd.DataFrame(sweep_rows)
-    new_df["model"] = security_model.name
-
-    return tuple(trace_rows), new_df
 
 
 def plot_selected_routes_vs_keys(

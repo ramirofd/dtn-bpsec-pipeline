@@ -2,108 +2,79 @@ from __future__ import annotations
 
 import unittest
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import pandas as pd
+
 from models.plot_utils import (
-    build_contact_usage_data,
-    build_key_reuse_data,
-    build_key_scope_activation_data,
-    build_pair_coverage_data,
+    build_contact_usage_data, build_key_reuse_data, build_key_scope_activation_data,
+    build_pair_coverage_data, plot_metric_bars_by_model, plot_metric_curve,
 )
-from modules.security.keys import KeyScope
-from modules.security.models import KeyType, SecurityModelType
-from modules.security.planning import build_protection_plan
-from pipelines.route_activation import (
-    RouteActivationArtifacts,
-    RouteActivationPlanner,
-    trace_route_activation_solution,
-)
-from pipelines.simulation import SecurityBatchResult, SimulationResult
-from tests.builders import (
-    make_annotation_batch_result,
-    make_annotated_route,
-    make_contact,
-    make_route,
-    make_routing_batch_result,
-    make_topology,
-)
-
-
-class _DummyVar:
-    def __init__(self, value: float) -> None:
-        self.X = value
+from modules.security.models import SecurityModelType
+from pipelines.activation import ActivationPlanner, ActivationSolution, build_trace
+from pipelines.simulation import RouteAnnotationStage, SecurityPlanningStage
+from tests.builders import make_contact, make_route, make_route_catalog, make_topology
 
 
 def build_sample_trace():
     topology = make_topology({1: (1, 2), 2: (3, 4)})
     pair = (1, 4)
-    route = make_route(
-        (
-            make_contact(1, 2, start=0, end=10, rate=5, owlt=1),
-            make_contact(2, 3, start=12, end=25, rate=7, owlt=2),
-            make_contact(3, 4, start=30, end=45, rate=9, owlt=1),
-        )
+    route = make_route((
+        make_contact(1, 2, start=0, end=10, rate=5, owlt=1),
+        make_contact(2, 3, start=12, end=25, rate=7, owlt=2),
+        make_contact(3, 4, start=30, end=45, rate=9, owlt=1),
+    ))
+    routes = make_route_catalog(topology=topology, pairs=(pair,), routes_by_pair={pair: (route,)})
+    annotations = RouteAnnotationStage().annotate(routes)
+    catalog = SecurityPlanningStage().build(annotations)
+    problem = ActivationPlanner().build(catalog, policy_id=SecurityModelType.EDGE_BY_EDGE.name)
+    solution = ActivationSolution(
+        {ref: 1.0 for ref in problem.requirements}, {scope: 1.0 for scope in problem.key_scopes},
     )
-    annotated_route = make_annotated_route(
-        topology,
-        source_node=pair[0],
-        destination_node=pair[1],
-        contacts=route.get_hops(),
-        route_id="route-1",
-    )
-    plan = build_protection_plan(SecurityModelType.EDGE_BY_EDGE, annotated_route)
-    security_batch = SecurityBatchResult(
-        pairs=(pair,),
-        symmetric_keys=False,
-        plans_by_model={
-            SecurityModelType.EDGE_BY_EDGE: {
-                pair: (plan,),
-            }
-        },
-    )
-    planning = RouteActivationPlanner().build_for_model(
-        security_batch,
-        model=SecurityModelType.EDGE_BY_EDGE,
-    )
-    routing = make_routing_batch_result(
-        topology=topology,
-        pairs=(pair,),
-        routes_by_pair={pair: (route,)},
-        contact_plan_size=3,
-    )
-    annotation = make_annotation_batch_result(
-        topology=topology,
-        pairs=(pair,),
-        routes_by_pair={pair: (route,)},
-        annotated_routes_by_pair={pair: (annotated_route,)},
-        contact_plan_size=3,
-    )
-    result = SimulationResult(
-        topology=topology,
-        contact_plan_size=3,
-        routing=routing,
-        annotation=annotation,
-        security=security_batch,
-    )
-    artifacts = RouteActivationArtifacts(
-        planning=planning,
-        model=None,
-        route_vars={
-            planning.route_requirements[0].route_id: _DummyVar(1.0),
-        },
-        key_vars={
-            scope: _DummyVar(1.0)
-            for scope in planning.key_scopes
-        },
-        route_constraints={},
-    )
-    trace = trace_route_activation_solution(
-        result,
-        artifacts,
-        security_model=SecurityModelType.EDGE_BY_EDGE,
-    )
-    return trace
+    return build_trace(problem, solution)
 
 
 class PlotUtilsDataTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        plt.close("all")
+
+    def test_configured_policies_are_kept_in_curves_and_bars(self) -> None:
+        data = pd.DataFrame({
+            "model": ["END_TO_END", "END_TO_END", "custom-policy", "custom-policy"],
+            "target": [0, 1, 0, 1], "cost": [1, 2, 3, 4],
+        })
+        ax = plot_metric_curve(data, x="target", y="cost")
+        self.assertEqual([text.get_text() for text in ax.get_legend().get_texts()], ["E2E", "custom-policy"])
+        ax = plot_metric_bars_by_model(data[data.target == 1], y="cost")
+        self.assertEqual([text.get_text() for text in ax.get_xticklabels()], ["E2E", "custom-policy"])
+        self.assertEqual([bar.get_height() for bar in ax.patches], [2, 4])
+
+    def test_infeasible_metrics_are_not_plotted_as_zero(self) -> None:
+        data = pd.DataFrame({"model": ["END_TO_END"], "target": [100], "cost": [None]})
+        for ax in (
+            plot_metric_curve(data, x="target", y="cost"),
+            plot_metric_bars_by_model(data, y="cost"),
+        ):
+            self.assertEqual(len(ax.patches), 0)
+            self.assertEqual(len(ax.lines), 0)
+            self.assertIn("No feasible solution", ax.texts[0].get_text())
+
+    def test_connectivity_summary_supports_custom_and_infeasible_policies(self) -> None:
+        from models.model2_min_keys import plot_required_key_percentage_at_connectivity
+
+        data = pd.DataFrame({
+            "model": ["custom-policy", "END_TO_END", "unreachable-policy"],
+            "target_connectivity_pct": [100, 100, 100],
+            "selected_keys_pct_of_available": [50, 25, None],
+            "selected_keys": [2, 1, None], "total_key_scopes": [4, 4, 4],
+        })
+        ax = plot_required_key_percentage_at_connectivity(data)
+        self.assertEqual([text.get_text() for text in ax.get_xticklabels()], ["E2E", "custom-policy"])
+        self.assertEqual([text.get_text() for text in ax.texts], ["25.0%\n(1/4)", "50.0%\n(2/4)"])
+        ax = plot_required_key_percentage_at_connectivity(data.iloc[2:])
+        self.assertIn("No feasible solution", ax.texts[0].get_text())
+
     def test_build_key_scope_activation_data_counts_key_usage(self) -> None:
         trace = build_sample_trace()
 

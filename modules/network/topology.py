@@ -4,6 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Iterator
+from types import MappingProxyType
 from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
@@ -76,8 +77,19 @@ class TopologyDocument(BaseModel):
 
 @dataclass(slots=True, frozen=True)
 class Topology(Mapping[int, int]):
-    node_to_network: dict[int, int]
-    network_to_nodes: dict[int, frozenset[int]]
+    node_to_network: Mapping[int, int]
+    network_to_nodes: Mapping[int, frozenset[int]]
+
+    def __post_init__(self) -> None:
+        node_to_network = dict(self.node_to_network)
+        network_to_nodes = {network: frozenset(nodes) for network, nodes in self.network_to_nodes.items()}
+        expected = {node: network for network, nodes in network_to_nodes.items() for node in nodes}
+        if sum(map(len, network_to_nodes.values())) != len(expected) or expected != node_to_network:
+            raise TopologyValidationError("topology mappings must describe the same unique node memberships")
+        if any(node <= 0 or network <= 0 for node, network in node_to_network.items()):
+            raise TopologyValidationError("node and network identifiers must be positive")
+        object.__setattr__(self, "node_to_network", MappingProxyType(node_to_network))
+        object.__setattr__(self, "network_to_nodes", MappingProxyType(network_to_nodes))
 
     @classmethod
     def from_json_file(cls, file_name: str) -> Topology:

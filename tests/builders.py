@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
+from modules.domain import ContactSnapshot, RouteCandidate, RouteRef, Scenario
 from modules.network.cgr.models import Contact, Route
 from modules.network.topology import Topology
 from modules.security.annotated_routes import (
@@ -10,7 +11,7 @@ from modules.security.annotated_routes import (
     BoundaryCrossing,
 )
 from modules.security.models import NetworkRole
-from pipelines.simulation import AnnotationBatchResult, RoutingBatchResult
+from pipelines.catalogs import AnnotationCatalog, RouteCatalog
 
 
 def make_contact(
@@ -63,7 +64,7 @@ def make_annotated_route(
     source_node: int,
     destination_node: int,
     contacts: Iterable[Contact],
-    route_id: str = "route-1",
+    candidate_id: int = 1,
 ) -> AnnotatedRoute:
     contact_list = tuple(contacts)
     if not contact_list:
@@ -110,7 +111,7 @@ def make_annotated_route(
             gateway_nodes.add(contact.to)
     
     return AnnotatedRoute(
-        route_id=route_id,
+        ref=RouteRef((source_node, destination_node), candidate_id),
         src_node=source_node,
         dst_node=destination_node,
         source_network=topology.get_network_for_node(source_node),
@@ -123,33 +124,29 @@ def make_annotated_route(
     )
 
 
-def make_routing_batch_result(
-    *,
-    topology: Topology,
-    pairs: tuple[tuple[int, int], ...],
-    routes_by_pair: dict[tuple[int, int], tuple[Route, ...]],
-    contact_plan_size: int = 0,
-) -> RoutingBatchResult:
-    return RoutingBatchResult(
-        topology=topology,
-        contact_plan_size=contact_plan_size,
-        pairs=pairs,
-        routes_by_pair=routes_by_pair,
-    )
+def make_scenario(topology: Topology, contacts: Iterable[Contact], pairs=None) -> Scenario:
+    return Scenario(topology, tuple(ContactSnapshot.from_contact(c) for c in contacts), pairs)
 
 
-def make_annotation_batch_result(
-    *,
-    topology: Topology,
+def make_route_catalog(
+    *, topology: Topology,
     pairs: tuple[tuple[int, int], ...],
-    routes_by_pair: dict[tuple[int, int], tuple[Route, ...]],
-    annotated_routes_by_pair: dict[tuple[int, int], tuple[AnnotatedRoute, ...]],
-    contact_plan_size: int = 0,
-) -> AnnotationBatchResult:
-    return AnnotationBatchResult(
-        topology=topology,
-        contact_plan_size=contact_plan_size,
-        pairs=pairs,
-        routes_by_pair=routes_by_pair,
-        annotated_routes_by_pair=annotated_routes_by_pair,
-    )
+    routes_by_pair: Mapping[tuple[int, int], tuple[Route, ...]],
+) -> RouteCatalog:
+    candidates = {
+        RouteRef(pair, index): RouteCandidate.from_route(RouteRef(pair, index), route)
+        for pair, routes in routes_by_pair.items()
+        for index, route in enumerate(routes, start=1)
+    }
+    contacts = tuple(dict.fromkeys(c for route in candidates.values() for c in route.contacts))
+    return RouteCatalog(Scenario(topology, contacts, pairs), candidates)
+
+
+def make_annotation_catalog(
+    *, routes: RouteCatalog, annotated_routes: Iterable[AnnotatedRoute],
+) -> AnnotationCatalog:
+    annotations = tuple(annotated_routes)
+    by_route = {annotation.ref: annotation for annotation in annotations}
+    if len(by_route) != len(annotations):
+        raise ValueError("duplicate annotated route reference")
+    return AnnotationCatalog(routes, by_route)

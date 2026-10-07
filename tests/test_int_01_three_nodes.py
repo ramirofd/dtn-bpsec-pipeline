@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import unittest
 
+from modules.domain import PlanRef, RouteRef
 from modules.security.models import KeyType, SecurityModelType
 from pipelines.routing import RoutingAlgorithm, RoutingRequest
-from pipelines.simulation import SimulationPipeline
-from tests.builders import make_contact, make_route, make_topology
+from pipelines.simulation import RoutingStage, SimulationPipeline
+from pipelines.routing import RoutingBatchRequest
+from tests.builders import make_contact, make_route, make_topology, make_scenario
 
 
 class FixedPairRoutingAlgorithm(RoutingAlgorithm):
@@ -47,13 +49,11 @@ def build_three_nodes_transit_foreign_network() -> dict[str, object]:
 class ThreeNodesIntegrationTests(unittest.TestCase):
     def run_guided_pipeline(self, scenario: dict[str, object]):
         route = make_route(scenario["contact_plan"])
-        return SimulationPipeline().run_loaded(
-            **scenario,
-            security_models=tuple(SecurityModelType),
-            curr_time=0,
-            num_routes=1,
-            routing_algorithm=FixedPairRoutingAlgorithm({(1, 3): (route,)}),
-        )
+        return SimulationPipeline(
+            routing=RoutingStage(FixedPairRoutingAlgorithm({(1, 3): (route,)}))
+        ).run(RoutingBatchRequest(
+            make_scenario(scenario["topology"], scenario["contact_plan"]), num_routes=1,
+        ))
 
     def assert_key_requirements_by_model(
         self,
@@ -64,7 +64,7 @@ class ThreeNodesIntegrationTests(unittest.TestCase):
     ) -> None:
         for model, expected_requirements in expected_by_model.items():
             with self.subTest(model=model.name):
-                plan = result.security.plans_by_model[model][pair][0]
+                plan = result.protection.by_plan[PlanRef(RouteRef(pair, 1), model.name)]
                 actual_requirements = tuple(
                     (
                         requirement.key_type,
@@ -80,7 +80,7 @@ class ThreeNodesIntegrationTests(unittest.TestCase):
         """Guide test: a three-node route inside one network never creates boundaries."""
         pair = (1, 3)
         result = self.run_guided_pipeline(build_three_nodes_same_network())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.node_path, (1, 2, 3))
         self.assertEqual(annotated_route.network_path, (1, 1, 1))
@@ -110,7 +110,7 @@ class ThreeNodesIntegrationTests(unittest.TestCase):
         """Guide test: entering another network creates one boundary plus one remote segment."""
         pair = (1, 3)
         result = self.run_guided_pipeline(build_three_nodes_enter_foreign_network())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.node_path, (1, 2, 3))
         self.assertEqual(annotated_route.network_path, (1, 2, 2))
@@ -145,7 +145,7 @@ class ThreeNodesIntegrationTests(unittest.TestCase):
         """Guide test: leaving the home network keeps the first hop local before the boundary."""
         pair = (1, 3)
         result = self.run_guided_pipeline(build_three_nodes_exit_home_network())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.node_path, (1, 2, 3))
         self.assertEqual(annotated_route.network_path, (1, 1, 2))
@@ -180,7 +180,7 @@ class ThreeNodesIntegrationTests(unittest.TestCase):
         """Guide test: leaving and re-entering the home network collapses both edge-based models to N1-N3."""
         pair = (1, 3)
         result = self.run_guided_pipeline(build_three_nodes_transit_foreign_network())
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.node_path, (1, 2, 3))
         self.assertEqual(annotated_route.network_path, (1, 2, 1))

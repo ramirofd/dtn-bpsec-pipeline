@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import unittest
 
+from modules.domain import PlanRef, RouteRef
 from modules.security.models import KeyType
 from modules.security.models import SecurityModelType
-from pipelines.simulation import SimulationPipeline
-from tests.builders import make_contact, make_topology
+from pipelines.simulation import RoutingStage, SimulationPipeline
+from pipelines.routing import RoutingBatchRequest
+from tests.builders import make_contact, make_topology, make_scenario
 
 
 def build_two_nodes_same_network() -> dict[str, object]:
@@ -32,7 +34,7 @@ class TwoNodesIntegrationTests(unittest.TestCase):
     ) -> None:
         for model, (key_type, source_id, target_id) in expected_by_model.items():
             with self.subTest(model=model.name):
-                plan = result.security.plans_by_model[model][pair][0]
+                plan = result.protection.by_plan[PlanRef(RouteRef(pair, 1), model.name)]
                 self.assertEqual(len(plan.key_requirements), 1)
                 requirement = plan.key_requirements[0]
                 self.assertEqual(requirement.key_type, key_type)
@@ -42,17 +44,16 @@ class TwoNodesIntegrationTests(unittest.TestCase):
 
     def test_same_network_route_stays_local_and_edge_to_edge_degenerates(self) -> None:
         """Guide test: a two-node route inside one network has no boundary crossings."""
-        result = SimulationPipeline().run_loaded(
-            **build_two_nodes_same_network(),
-            security_models=tuple(SecurityModelType),
-            curr_time=0,
+        data = build_two_nodes_same_network()
+        result = SimulationPipeline().run(RoutingBatchRequest(
+            make_scenario(data["topology"], data["contact_plan"]),
             num_routes=1,
-        )
+        ))
 
         pair = (1, 2)
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
-        self.assertEqual(result.routing.pairs, (pair, (2, 1)))
+        self.assertEqual(result.routes.scenario.pairs, (pair, (2, 1)))
         self.assertEqual(annotated_route.node_path, (1, 2))
         self.assertEqual(annotated_route.network_path, (1, 1))
         self.assertEqual(annotated_route.boundary_crossings, ())
@@ -70,15 +71,14 @@ class TwoNodesIntegrationTests(unittest.TestCase):
 
     def test_cross_network_route_marks_one_boundary_and_keeps_gateway_nodes(self) -> None:
         """Guide test: a two-node route across networks records one boundary crossing."""
-        result = SimulationPipeline().run_loaded(
-            **build_two_nodes_cross_network(),
-            security_models=tuple(SecurityModelType),
-            curr_time=0,
+        data = build_two_nodes_cross_network()
+        result = SimulationPipeline().run(RoutingBatchRequest(
+            make_scenario(data["topology"], data["contact_plan"]),
             num_routes=1,
-        )
+        ))
 
         pair = (1, 2)
-        annotated_route = result.annotation.annotated_routes_by_pair[pair][0]
+        annotated_route = result.annotations.by_route[RouteRef(pair, 1)]
 
         self.assertEqual(annotated_route.node_path, (1, 2))
         self.assertEqual(annotated_route.network_path, (1, 2))
